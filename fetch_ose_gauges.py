@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""
+fetch_ose_gauges.py
+Scheduled fetcher for NM OSE/ISC real-time flow gauges (meas.ose.state.nm.us).
+
+For each configured gauge it downloads the public site page and extracts every
+(timestamp, discharge_cfs) reading currently shown. The site exposes roughly the
+last 3-4 days at 15-minute cadence, so running on a schedule (at least every few
+days; hourly or 6-hourly recommended) accumulates a continuous record over time
+with no gaps. Values within the visible window are refreshed each run, which lets
+OSE's provisional revisions settle in before they scroll out of view and freeze.
+
+Outputs (under DATA_DIR, default ./data):
+  data/by_gauge/<slug>.csv      tidy per-gauge log:  timestamp,discharge_cfs
+  data/discharge_cfs_wide.csv   merged wide table:   timestamp + one col / gauge
+  data/last_run.json            run summary / per-gauge status
+
+Only dependency beyond the stdlib is `requests`.
+"""
+
+import csv
+import json
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# --- Site -------------------------------------------------------------------
+BASE_URL = "https://meas.ose.state.nm.us/site.jsp"
+COMMON = {"status": "Y", "type": "S", "dist": "6", "basin": "NPT"}
+
+# --- The 21 NPT (Nambe-Pojoaque-Tesuque) acequia gauges ---------------------
+# (id, display name). id is the OSE site id from the site.jsp URL.
+# This is my best reading of the NPT acequia network from the OSE site map;
+# CONFIRM / TRIM to your exact 21.
+GAUGES = [
+    (22, "High Line"),
+    (43, "Upper Consolidated"),
+    (28, "Lower Consolidated"),
+    (31, "Nueva"),
+    (27, "Llano"),
+    (6,  "Comunidad"),
+    (33, "Ortiz"),
+    (21, "Gardunos"),
+    (24, "Jose G. Ortiz"),
+    (5,  "Cano"),
+    (39, "Rincon"),
+    (26, "Las Joyas"),
+    (42, "Trujillos"),
+    (3,  "Barranco Alto"),
+    (25, "Larga"),
+    (1,  "Ancon de Jacona"),
+    (2,  "Barranco"),
+    (45, "Otra Vanda"),
+    (38, "Rancho"),
+    (23, "Indios"),
+    (41, "San Ildefonso"),
+]
+
+# --- Config -----------------------------------------------------------------
+DATA_DIR = Path(os.environ.get("OSE_DATA_DIR", "data"))
+BY_GAUGE_DIR = DATA_DIR / "by_gauge"
+WIDE_CSV = DATA_DIR / "discharge_cfs_wide.csv"
+STATUS_JSON = DATA_DIR / "last_run.json"
+
+REQUEST_TIMEOUT = 30          # seconds
+SLEEP_BETWEEN = 1.0           # polite gap between requests to a public server
+USER_AGENT = "ose-gauge-logger/1.0 (research use)"
+
+# Data table columns are: Date/Time | Discharge (cfs) | Gage Height (ft).
+# After stripping HTML tags, a row reads e.g. "06/21/2026 15:15 2.01 0.33".
+ROW_RE = re.compile(
+    r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})\s+"   # date + time
+    r"(-?\d+(?:\.\d+)?)\s+"                       # discharge (cfs)  <- stored
+    r"(-?\d+(?:\.\d+)?)"                          # gage height (ft) <- ignored
+)
+
+
+def slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def make_session() -> requests.Session:
+    s = requests.Session()
+    retry = Retry(
+        total=4, backoff_factor=1.5,
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.headers.update({"User-Agent": USER_AGENT})
+    return s
+
+
+def strip_tags(html: str) -> str:
+    html = re.sub(r"(?is)<script.*?</script>", " ", html)
+    html = re.sub(r"(?is)<style.*?</style>", " ", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", html)
+    text = text.replace("&nbsp;", " ")
+    return re.sub(r"[ \t]+", " ", text)
+
+
+def parse_readings(html: str) -> dict:
+    """Map ISO 'YYYY-MM-DD HH:MM' -> discharge_cfs (float) from a site page."""
+    text = strip_tags(html)
+    out = {}
+    for date_s, time_s, disch_s, _gage_s in ROW_RE.findall(text):
+        try:
+            dt = datetime.strptime(f"{date_s} {time_s}", "%m/%d/%Y %H:%M")
+        except ValueError:
+            continue
+        out[dt.strftime("%Y-%m-%d %H:%M")] = float(disch_s)  # dedupe by ts
+    return out
+
+
+def load_existing(path: Path) -> dict:
+    rows = {}
+    if path.exists():
+        with path.open(newline="") as f:
+            r = csv.reader(f)
+            next(r, None)  # header
+            for row in r:
+                if len(row) >= 2 and row[0]:
+                    rows[row[0]] = row[1]
+    return rows
+
+
+def write_gauge_csv(path: Path, rows: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["timestamp", "discharge_cfs"])
+        for ts in sorted(rows):
+            w.writerow([ts, rows[ts]])
+
+
+def fetch_gauge(session: requests.Session, gid: int) -> dict:
+    resp = session.get(
+        BASE_URL, params={"id": str(gid), **COMMON}, timeout=REQUEST_TIMEOUT
+    )
+    resp.raise_for_status()
+    return parse_readings(resp.text)
+
+
+def build_wide(gauge_files: list) -> None:
+    cols, all_ts = {}, set()
+    for name, path in gauge_files:
+        d = load_existing(path)
+        cols[name] = d
+        all_ts.update(d)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    names = [n for n, _ in gauge_files]
+    with WIDE_CSV.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["timestamp"] + names)
+        for ts in sorted(all_ts):
+            w.writerow([ts] + [cols[n].get(ts, "") for n in names])
+
+
+def main() -> int:
+    session = make_session()
+    summary = {
+        "run_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "gauges": {},
+    }
+    gauge_files = []
+    for gid, name in GAUGES:
+        path = BY_GAUGE_DIR / f"{slugify(name)}.csv"
+        gauge_files.append((name, path))
+        try:
+            fetched = fetch_gauge(session, gid)
+            existing = load_existing(path)
+            before = len(existing)
+            for ts, cfs in fetched.items():
+                existing[ts] = f"{cfs:g}"   # overwrite to absorb revisions
+            write_gauge_csv(path, existing)
+            latest = max(existing) if existing else None
+            summary["gauges"][name] = {
+                "id": gid, "added": len(existing) - before,
+                "latest": latest, "ok": True,
+            }
+            print(f"[ok]  {name:<20} +{len(existing) - before:<4} latest={latest}")
+        except Exception as e:  # one bad gauge shouldn't sink the run
+            summary["gauges"][name] = {"id": gid, "ok": False, "error": str(e)}
+            print(f"[err] {name:<20} {e}", file=sys.stderr)
+        time.sleep(SLEEP_BETWEEN)
+
+    build_wide(gauge_files)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_JSON.write_text(json.dumps(summary, indent=2))
+
+    ok = sum(1 for g in summary["gauges"].values() if g.get("ok"))
+    print(f"\nDone: {ok}/{len(GAUGES)} gauges ok. Wide table -> {WIDE_CSV}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
