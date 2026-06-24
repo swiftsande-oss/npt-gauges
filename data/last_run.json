@@ -1,0 +1,131 @@
+{
+  "run_utc": "2026-06-24T17:49:01Z",
+  "gauges": {
+    "High Line": {
+      "id": 22,
+      "added": 319,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Upper Consolidated": {
+      "id": 43,
+      "added": 321,
+      "latest": "2026-06-24 11:00",
+      "ok": true
+    },
+    "Lower Consolidated": {
+      "id": 28,
+      "added": 321,
+      "latest": "2026-06-24 11:00",
+      "ok": true
+    },
+    "Nueva": {
+      "id": 31,
+      "added": 312,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Llano": {
+      "id": 27,
+      "added": 316,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Comunidad": {
+      "id": 6,
+      "added": 253,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Ortiz": {
+      "id": 33,
+      "added": 311,
+      "latest": "2026-06-24 11:13",
+      "ok": true
+    },
+    "Gardunos": {
+      "id": 21,
+      "added": 312,
+      "latest": "2026-06-24 11:00",
+      "ok": true
+    },
+    "Jose G. Ortiz": {
+      "id": 24,
+      "added": 259,
+      "latest": "2026-06-24 10:30",
+      "ok": true
+    },
+    "Cano": {
+      "id": 5,
+      "added": 221,
+      "latest": "2026-06-24 10:30",
+      "ok": true
+    },
+    "Rincon": {
+      "id": 39,
+      "added": 289,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Las Joyas": {
+      "id": 26,
+      "added": 222,
+      "latest": "2026-06-24 10:57",
+      "ok": true
+    },
+    "Trujillos": {
+      "id": 42,
+      "added": 269,
+      "latest": "2026-06-24 11:13",
+      "ok": true
+    },
+    "Barranco Alto": {
+      "id": 3,
+      "added": 305,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Larga": {
+      "id": 25,
+      "added": 287,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Ancon de Jacona": {
+      "id": 1,
+      "added": 289,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Barranco": {
+      "id": 2,
+      "added": 312,
+      "latest": "2026-06-24 11:12",
+      "ok": true
+    },
+    "Otra Vanda": {
+      "id": 45,
+      "added": 236,
+      "latest": "2026-06-24 11:00",
+      "ok": true
+    },
+    "Rancho": {
+      "id": 38,
+      "added": 267,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "Indios": {
+      "id": 23,
+      "added": 318,
+      "latest": "2026-06-24 10:45",
+      "ok": true
+    },
+    "San Ildefonso": {
+      "id": 41,
+      "added": 0,
+      "latest": null,
+      "ok": true
+    }
+  }
+}
