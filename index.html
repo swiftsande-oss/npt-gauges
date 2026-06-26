@@ -756,7 +756,7 @@
   function clock(d){ return d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}); }
   function updateRefreshMessage(){
     var el=document.getElementById("refreshMsg"); if(!el) return;
-    var lines=["GitHub refreshed data a few times per day."];
+    var lines=["GitHub refreshes data a few times per day."];
     if(lastModified){ var lm=new Date(lastModified); if(!isNaN(lm)) lines.push("Last updated "+clock(lm)+"."); }
     el.innerHTML=lines.join("<br>");
   }
