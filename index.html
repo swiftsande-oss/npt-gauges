@@ -91,11 +91,11 @@
   .axis .domain{stroke:var(--hair)}
   .axis-title{font-family:var(--mono);font-size:11px;fill:var(--faint);letter-spacing:.04em}
   .curve-label{font-family:var(--mono);font-size:11px;font-weight:600;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
-  .info-tip{position:fixed;z-index:60;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--ink);color:#fff;font-family:var(--mono);font-size:11.5px;line-height:1.55;padding:8px 11px;border-radius:7px;max-width:280px;box-shadow:0 6px 22px rgba(20,30,38,.22);transform:translateX(-50%);white-space:normal}
+  .info-tip{position:fixed;z-index:60;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--ink);color:#fff;font-family:var(--mono);font-size:10.5px;line-height:1.6;padding:8px 12px;border-radius:7px;max-width:none;white-space:nowrap;box-shadow:0 6px 22px rgba(20,30,38,.22);transform:translateX(-50%)}
   .crosshair{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;opacity:.5}
   .ptmark{stroke:#fff;stroke-width:1.5}
 
-  .tooltip{position:absolute;pointer-events:none;z-index:5;opacity:0;transition:opacity .08s;background:var(--ink);color:#fff;border-radius:8px;padding:9px 11px;min-width:160px;font-size:12px;box-shadow:0 6px 22px rgba(20,30,38,.22);transform:translate(-50%,0)}
+  .tooltip{position:absolute;pointer-events:none;z-index:5;opacity:0;transition:opacity .08s;background:var(--ink);color:#fff;border-radius:8px;padding:9px 11px;min-width:160px;font-size:12px;box-shadow:0 6px 22px rgba(20,30,38,.22)}
   .tooltip .tt-x{font-family:var(--mono);font-size:11px;color:#aeb9c0;margin-bottom:6px}
   .tt-row{display:flex;align-items:center;gap:8px;margin:3px 0;justify-content:space-between}
   .tt-left{display:flex;align-items:center;gap:7px;min-width:0}
@@ -153,7 +153,7 @@
         <span class="label">Adjust data</span>
         <div class="seg" id="adjustSeg" role="group" aria-label="Adjust data">
           <button type="button" data-v="none" aria-pressed="true" data-info="Raw OSE data">None</button>
-          <button type="button" data-v="adjust" data-info="ConsolNet = UpperConsol − LowerConsol&#10;IndiosAdj = 1.0724 × (Indios cfs − 0.135 cfs)">Adjust</button>
+          <button type="button" data-v="adjust" data-info="NambePuebloNet = HighLine + UpperConsol − Nueva − Llano − Comunidad&#10;ConsolNet = UpperConsol − LowerConsol&#10;IndiosAdj = 1.0724 × (Indios cfs − 0.135 cfs)">Adjust</button>
         </div>
         <p class="hint">Hover a button for what it does. Adjust never changes the saved data.</p>
       </div>
@@ -161,8 +161,9 @@
       <div class="group">
         <span class="label">Measure</span>
         <div class="seg" id="measureSeg" role="group" aria-label="Measure">
-          <button type="button" data-v="cfs" aria-pressed="true">Discharge (cfs)</button>
+          <button type="button" data-v="cfs" aria-pressed="true">Flow (cfs)</button>
           <button type="button" data-v="af" aria-pressed="false">Total (AF)</button>
+          <button type="button" data-v="pct" aria-pressed="false" style="display:none" data-info="Aamodt 1978 allowables">Total (%)</button>
         </div>
         <p class="hint" id="measureHint">Instantaneous flow rate at each gauge.</p>
       </div>
@@ -262,38 +263,77 @@
   });
 
   var state={measure:"cfs",resample:"raw",scale:"linear",smooth:2,adjust:false,
-             winStart:null,winEnd:null,ymax:null,visible:new Set(),emph:new Set()};
+             winStart:null,winEnd:null,winAll:true,ymax:null,visible:new Set(),emph:new Set()};
   var rawData=null;         // the loaded CSV, never modified
   var data=null;            // active view: rawData, or the adjusted version
   var resampleCache={key:null,val:null};
 
+  // ---- Aamodt 1978 annual allowable volumes (acre-feet), as provided.
+  // Order is preserved for the hover table; the map is keyed by the curve's
+  // display name (Indios' allowable applies to the IndiosAdj curve).
+  var AAMODT=[
+    ["NambePuebloNet",1319],["Nueva",849],["Llano",424],["Comunidad",1028],["Ortiz",666],
+    ["Gardunos",89],["Jose G. Ortiz",78],["Cano",884],["Rincon",497],["Las Joyas",865],
+    ["Trujillos",353],["Barranco Alto",417],["Larga",646],["Ancon de Jacona",135],
+    ["Barranco",478],["Otra Vanda",939],["Rancho",318],["Indios",416],["San Ildefonso",728]
+  ];
+  var ALLOWABLES={}; AAMODT.forEach(function(r){ ALLOWABLES[ r[0]==="Indios"?"IndiosAdj":r[0] ]=r[1]; });
+  function pctEligible(nm){ return nm!=="ConsolNet" && ALLOWABLES[nm]!=null; }
+
   // ---- ADJUST DATA: derived series, computed in-browser; the CSV is untouched.
-  var ADJ_UP="Upper Consolidated", ADJ_LO="Lower Consolidated", ADJ_IN="Indios";
+  var ADJ_UP="Upper Consolidated", ADJ_LO="Lower Consolidated", ADJ_IN="Indios",
+      ADJ_HL="High Line", ADJ_NU="Nueva", ADJ_LL="Llano", ADJ_CO="Comunidad";
   function computeAdjusted(raw){
     var hasConsol = raw.cols[ADJ_UP] && raw.cols[ADJ_LO];
     var hasIndios = !!raw.cols[ADJ_IN];
-    // Lower Consolidated as (time,value) pairs for interpolation onto Upper's times
-    var low=[];
-    if(hasConsol){ for(var i=0;i<raw.t.length;i++){ var v=raw.cols[ADJ_LO][i];
-      if(v!=null&&isFinite(v)) low.push([raw.t[i].getTime(),v]); } }
-    function interpLow(ms){
-      if(!low.length) return null;
-      if(ms<=low[0][0]) return low[0][1];
-      if(ms>=low[low.length-1][0]) return low[low.length-1][1];
-      var lo=0,hi=low.length-1;
-      while(lo<hi){ var m=(lo+hi)>>1; if(low[m][0]<ms) lo=m+1; else hi=m; }
-      var a=low[lo-1], b=low[lo], f=(ms-a[0])/(b[0]-a[0]);
-      return a[1]+f*(b[1]-a[1]);
+    var hasNambe  = raw.cols[ADJ_HL] && raw.cols[ADJ_UP] && raw.cols[ADJ_NU] && raw.cols[ADJ_LL] && raw.cols[ADJ_CO];
+
+    // build a linear interpolator over one gauge's real (time,value) readings
+    function makeInterp(colName){
+      var pts=[], col=raw.cols[colName];
+      if(col){ for(var i=0;i<raw.t.length;i++){ var v=col[i]; if(v!=null&&isFinite(v)) pts.push([raw.t[i].getTime(),v]); } }
+      return function(ms){
+        if(!pts.length) return null;
+        if(ms<=pts[0][0]) return pts[0][1];
+        if(ms>=pts[pts.length-1][0]) return pts[pts.length-1][1];
+        var lo=0,hi=pts.length-1;
+        while(lo<hi){ var m=(lo+hi)>>1; if(pts[m][0]<ms) lo=m+1; else hi=m; }
+        var a=pts[lo-1], b=pts[lo], f=(ms-a[0])/(b[0]-a[0]);
+        return a[1]+f*(b[1]-a[1]);
+      };
     }
+
     var cols={}, names=[];
-    if(hasConsol){
-      var cn=new Array(raw.t.length);
-      for(var i=0;i<raw.t.length;i++){ var u=raw.cols[ADJ_UP][i];
-        if(u!=null&&isFinite(u)){ var l=interpLow(raw.t[i].getTime()); cn[i]=(l==null)?null:(u-l); }
-        else cn[i]=null; }
-      cols["ConsolNet"]=cn; names.push("ConsolNet");   // ConsolNet at the top
+
+    // NambePuebloNet = HighLine + UpperConsol - Nueva - Llano - Comunidad,
+    // evaluated wherever High Line OR Upper Consolidated has a reading (the two
+    // additive terms); the missing one and the three subtractive terms are
+    // interpolated. Null only where BOTH High Line and Upper are absent. (top)
+    if(hasNambe){
+      var iHl=makeInterp(ADJ_HL), iUp=makeInterp(ADJ_UP), iNu=makeInterp(ADJ_NU), iLl=makeInterp(ADJ_LL), iCo=makeInterp(ADJ_CO);
+      var npn=new Array(raw.t.length);
+      for(var i=0;i<raw.t.length;i++){
+        var hl=raw.cols[ADJ_HL][i], up=raw.cols[ADJ_UP][i];
+        var hlOk=(hl!=null&&isFinite(hl)), upOk=(up!=null&&isFinite(up));
+        if(!hlOk && !upOk){ npn[i]=null; continue; }     // null only where both primaries are missing
+        var ms=raw.t[i].getTime();
+        var H=hlOk?hl:iHl(ms), U=upOk?up:iUp(ms), n=iNu(ms), l=iLl(ms), c=iCo(ms);
+        npn[i]=(H==null||U==null||n==null||l==null||c==null)?null:(H+U-n-l-c);
+      }
+      cols["NambePuebloNet"]=npn; names.push("NambePuebloNet");
     }
+
+    // ConsolNet = Upper - Lower, at Upper's times with Lower interpolated.
+    if(hasConsol){
+      var iLo=makeInterp(ADJ_LO), cn=new Array(raw.t.length);
+      for(var i=0;i<raw.t.length;i++){ var u2=raw.cols[ADJ_UP][i];
+        if(u2!=null&&isFinite(u2)){ var lo2=iLo(raw.t[i].getTime()); cn[i]=(lo2==null)?null:(u2-lo2); }
+        else cn[i]=null; }
+      cols["ConsolNet"]=cn; names.push("ConsolNet");
+    }
+
     raw.names.forEach(function(n){
+      if(hasNambe && n===ADJ_HL) return;                       // folded into NambePuebloNet
       if(hasConsol && (n===ADJ_UP || n===ADJ_LO)) return;       // replaced by ConsolNet
       if(hasIndios && n===ADJ_IN){
         cols["IndiosAdj"]=raw.cols[ADJ_IN].map(function(v){
@@ -302,7 +342,7 @@
         });
         names.push("IndiosAdj"); return;
       }
-      cols[n]=raw.cols[n]; names.push(n);
+      cols[n]=raw.cols[n]; names.push(n);                       // (Nueva, Llano, Comunidad stay)
     });
     return {names:names, t:raw.t, cols:cols};
   }
@@ -313,11 +353,14 @@
       s.delete(ADJ_UP); s.delete(ADJ_LO);
       if(s.has(ADJ_IN)) s.add("IndiosAdj");
       s.delete(ADJ_IN);
+      s.delete(ADJ_HL);                                         // High Line folded into NambePuebloNet
     } else {
       if(s.has("ConsolNet")){ s.add(ADJ_UP); s.add(ADJ_LO); }
       s.delete("ConsolNet");
       if(s.has("IndiosAdj")) s.add(ADJ_IN);
       s.delete("IndiosAdj");
+      if(s.has("NambePuebloNet")) s.add(ADJ_HL);
+      s.delete("NambePuebloNet");
     }
     return s;
   }
@@ -325,9 +368,11 @@
     if(state.adjust===on || !rawData) return;
     state.visible=migrateSet(state.visible,on);
     state.emph=migrateSet(state.emph,on);
+    if(on) state.visible.add("NambePuebloNet");                 // default-show the headline net
     state.adjust=on;
     data = on ? computeAdjusted(rawData) : rawData;
     resampleCache={key:null,val:null};
+    updateMeasureAvailability();
     buildSeriesList(); render();
   }
   var geom=null;
@@ -467,6 +512,7 @@
     svg.setAttribute("viewBox","0 0 "+W+" "+H);
 
     var vis=data.names.filter(function(n){return state.visible.has(n);});
+    if(state.measure==="pct") vis=vis.filter(pctEligible);   // hide ConsolNet (and any non-allowable) in % mode
     if(!vis.length){ svg.innerHTML=""; note.textContent="No visible gauges — use “Show all” or pick gauges at left."; note.style.display="block"; geom=null; renderStatus(); return; }
 
     var R=getResampled();
@@ -484,7 +530,10 @@
     vis.forEach(function(nm){
       var cfs=idx.map(function(i){return R.cols[nm][i];});
       var disp;
-      if(state.measure==="af"){ disp=toAF(tWin,cfs); }
+      if(state.measure==="pct"){
+        var af=toAF(tWin,cfs), allow=ALLOWABLES[nm];
+        disp=(allow&&allow>0)?af.map(function(v){return v==null?null:v/allow*100;}):af.map(function(){return null;});
+      } else if(state.measure==="af"){ disp=toAF(tWin,cfs); }
       else { disp=state.smooth>1?rollingMean(cfs,state.smooth):cfs; }
       for(var k=0;k<disp.length;k++){ var y=disp[k]; if(y!=null&&isFinite(y)){ if(state.scale==="log"&&y<=0)continue; if(y<ymin)ymin=y; if(y>ymax)ymax=y; } }
       var ci=data.names.indexOf(nm);
@@ -558,18 +607,20 @@
   }
 
   function yTitle(){
+    if(state.measure==="pct") return "cumulative volume / Aamodt 1978 annual volume (%), since "+(state.winStart?fmtDateShort(state.winStart):"start");
     if(state.measure==="af") return "cumulative volume — AF since "+(state.winStart?fmtDateShort(state.winStart):"start");
     return "discharge (cfs)"+(state.smooth>1?" ("+state.smooth+"-pt mean)":"");
   }
   function renderStatus(){
     var el=document.getElementById("statusline");
     function k(a,b){return '<span><span class="seg-k">'+a+'</span> <b>'+b+'</b></span>';}
-    var vis=data.names.filter(function(n){return state.visible.has(n);}).length;
+    var nvis=data.names.filter(function(n){return state.visible.has(n);}).length;
     var win=(state.winStart&&state.winEnd)?(fmtDateShort(state.winStart)+"→"+fmtDateShort(state.winEnd)):"all";
     var rs={raw:"15-min",hour:"hourly",day:"daily"}[state.resample];
-    var bits=[k("measure",state.measure==="af"?"total (AF)":"discharge (cfs)"),k("averaging",rs),k("scale",state.scale)];
-    if(state.measure!=="af"&&state.smooth>1) bits.push(k("smooth",state.smooth+"-pt"));
-    bits.push(k("window",win)); bits.push(k("gauges",vis+"/"+data.names.length));
+    var mlabel={cfs:"discharge (cfs)",af:"total (AF)",pct:"total (% of Aamodt)"}[state.measure];
+    var bits=[k("measure",mlabel),k("averaging",rs),k("scale",state.scale)];
+    if(state.measure==="cfs"&&state.smooth>1) bits.push(k("smooth",state.smooth+"-pt"));
+    bits.push(k("window",win)); bits.push(k("gauges",nvis+"/"+data.names.length));
     el.innerHTML=bits.join("");
   }
 
@@ -595,14 +646,17 @@
         rows.push({name:sr.name,col:sr.col,val:y,cfs:sr.cfs[i],emph:sr.emph}); });
       pts.innerHTML=ptsHTML;
       rows.sort(function(a,b){ if(a.emph!==b.emph)return a.emph?-1:1; return (b.val==null?-Infinity:b.val)-(a.val==null?-Infinity:a.val); });
-      var unit=state.measure==="af"?" AF":" cfs";
+      var unit=state.measure==="pct"?" %":state.measure==="af"?" AF":" cfs";
       var html='<div class="tt-x">'+fmtFull(geom.tWin[i])+'</div>';
       rows.slice(0,14).forEach(function(r){ var cls=geom.hasEmph?(r.emph?"":"dim"):"";
-        var sub=state.measure==="af"?'<div class="tt-sub">'+fmt(r.cfs)+' cfs now</div>':"";
+        var sub=(state.measure==="af"||state.measure==="pct")?'<div class="tt-sub">'+fmt(r.cfs)+' cfs now</div>':"";
         html+='<div class="tt-row '+cls+'"><div class="tt-left"><span class="swatch" style="background:'+r.col+'"></span><div><span class="tt-name">'+r.name+'</span>'+sub+'</div></div><span class="tt-val">'+fmt(r.val)+unit+'</span></div>'; });
       tip.innerHTML=html; tip.style.opacity="1";
       var card=document.querySelector(".chartcard").getBoundingClientRect();
-      var left=Math.max(95,Math.min(card.width-95,clientX-card.left));
+      var mouseX=clientX-card.left, tw=tip.offsetWidth, off=14, m=8;
+      var left=mouseX+off;                                   // left edge just right of the cursor
+      if(left+tw > card.width-m) left=mouseX-off-tw;          // flip left of cursor near the right edge
+      if(left<m) left=m;
       tip.style.left=left+"px"; tip.style.top=(geom.mT/scale+8)+"px";
     }
     function hide(){var c=document.getElementById("cross");if(c)c.style.display="none";tip.style.opacity="0";}
@@ -613,7 +667,9 @@
   // ---------- series list ----------
   function buildSeriesList(){
     var box=document.getElementById("seriesList"); box.innerHTML="";
-    data.names.forEach(function(nm){ var ci=data.names.indexOf(nm),col=PALETTE[ci%PALETTE.length];
+    data.names.forEach(function(nm){
+      if(state.measure==="pct" && !pctEligible(nm)) return;     // hide ConsolNet (etc.) in % mode
+      var ci=data.names.indexOf(nm),col=PALETTE[ci%PALETTE.length];
       var item=document.createElement("div"); item.className="s-item"+(state.emph.has(nm)?" emph":"");
       var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=state.visible.has(nm);
       cb.addEventListener("click",function(ev){ev.stopPropagation(); if(cb.checked)state.visible.add(nm); else state.visible.delete(nm); render();});
@@ -633,12 +689,24 @@
       seg.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});
       if(after)after(); render(); }); }); }
 
+  function setMeasurePressed(v){ document.querySelectorAll('#measureSeg button').forEach(function(b){
+    b.setAttribute("aria-pressed", b.getAttribute("data-v")===v?"true":"false"); }); }
+  // The Total (%) button exists only when Adjust is on AND the window is All.
+  function updateMeasureAvailability(){
+    var avail = state.adjust && state.winAll;
+    var btn=document.querySelector('#measureSeg [data-v="pct"]');
+    if(btn) btn.style.display = avail ? "" : "none";
+    if(!avail && state.measure==="pct"){ state.measure="af"; setMeasurePressed("af"); applyMeasureUI(); }
+  }
+
   function applyMeasureUI(){
-    document.getElementById("smoothGroup").classList.toggle("disabled",state.measure==="af");
-    document.getElementById("measureHint").textContent = state.measure==="af"
-      ? "Cumulative acre-feet past each gauge since the window start (∫ cfs·dt ÷ 43,560)."
-      : "Instantaneous flow rate at each gauge.";
+    document.getElementById("smoothGroup").classList.toggle("disabled",state.measure!=="cfs");
+    document.getElementById("measureHint").textContent =
+        state.measure==="pct" ? "Cumulative volume as a percent of each acequia's Aamodt 1978 annual allowable (hover the button for the table)."
+      : state.measure==="af"  ? "Cumulative acre-feet past each gauge since the window start (∫ cfs·dt ÷ 43,560)."
+      :                         "Instantaneous flow rate at each gauge.";
     state.ymax=null; var ym=document.getElementById("ymaxVal"); if(ym)ym.value="";
+    buildSeriesList();
   }
   function setWindow(start,end){ state.winStart=start; state.winEnd=end;
     document.getElementById("startDt").value=start?toInput(start):"";
@@ -647,9 +715,15 @@
   function dataExtent(){ return {min:data.t[0],max:data.t[data.t.length-1]}; }
 
   function initControlsForData(){
-    var ex=dataExtent(); setWindow(ex.min,ex.max);
+    var ex=dataExtent();
     var inp=document.getElementById("startDt"), inp2=document.getElementById("endDt");
     inp.min=inp2.min=toInput(ex.min); inp.max=inp2.max=toInput(ex.max);
+    if(state.winStart==null){
+      setWindow(ex.min,ex.max);                 // first load: show All
+    } else {
+      var s=state.winStart; if(s<ex.min||s>ex.max) s=ex.min;
+      setWindow(s, ex.max);                      // keep the user's start; extend end to the latest data
+    }
   }
 
   function loadText(text,stamp){
@@ -679,14 +753,11 @@
   function tryAutoLoad(){ return reloadFromFile(false); }
 
   // ----- synchronized auto-refresh: watch the CSV's timestamp, reload on change
-  function nextHalfHour(){ var d=new Date(); d.setSeconds(0,0);
-    var m=d.getMinutes(); d.setMinutes(m + (m<30?30-m:60-m)); return d; }
   function clock(d){ return d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}); }
   function updateRefreshMessage(){
     var el=document.getElementById("refreshMsg"); if(!el) return;
-    var lines=["Data refreshes every 30 minutes."];
+    var lines=["GitHub refreshed data a few times per day."];
     if(lastModified){ var lm=new Date(lastModified); if(!isNaN(lm)) lines.push("Last updated "+clock(lm)+"."); }
-    lines.push("Next update \u2248 "+clock(nextHalfHour())+".");
     el.innerHTML=lines.join("<br>");
   }
   function checkForUpdate(){
@@ -721,11 +792,11 @@
 
     document.getElementById("presets").querySelectorAll("button").forEach(function(b){
       b.addEventListener("click",function(){ var w=b.getAttribute("data-w"), ex=dataExtent();
-        if(w==="all"){ setWindow(ex.min,ex.max); }
-        else { var days=Number(w); var start=new Date(ex.max.getTime()-days*864e5); if(start<ex.min)start=ex.min; setWindow(start,ex.max); }
-        render(); }); });
-    document.getElementById("startDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winStart=d;render();} });
-    document.getElementById("endDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winEnd=d;render();} });
+        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; }
+        else { var days=Number(w); var start=new Date(ex.max.getTime()-days*864e5); if(start<ex.min)start=ex.min; setWindow(start,ex.max); state.winAll=false; }
+        updateMeasureAvailability(); render(); }); });
+    document.getElementById("startDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winStart=d;state.winAll=false;updateMeasureAvailability();render();} });
+    document.getElementById("endDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winEnd=d;state.winAll=false;updateMeasureAvailability();render();} });
 
     document.getElementById("showAll").addEventListener("click",function(){state.visible=new Set(data.names);buildSeriesList();render();});
     document.getElementById("showNone").addEventListener("click",function(){state.visible=new Set();buildSeriesList();render();});
@@ -743,6 +814,15 @@
     document.querySelectorAll('label.filebtn').forEach(function(l){ l.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();l.click();} }); });
 
     setupHover();
+
+    // fill the Total (%) button's hover table from the Aamodt allowables
+    (function(){
+      var btn=document.querySelector('#measureSeg [data-v="pct"]');
+      if(!btn) return;
+      var body=AAMODT.map(function(r){ var n=r[0], gap=18-n.length; if(gap<2)gap=2;
+        return n + new Array(gap+1).join("\u00A0") + r[1]; }).join("\n");
+      btn.setAttribute("data-info","Aamodt 1978 allowables (AF/yr)\n"+body);
+    })();
 
     // hover/focus info bubbles for any element with data-info
     (function(){
@@ -763,10 +843,10 @@
         el.addEventListener("blur",hideInfo);
       });
     })();
+    updateMeasureAvailability();
     var rt; window.addEventListener("resize",function(){clearTimeout(rt);rt=setTimeout(function(){if(data)render();},120);});
 
     updateRefreshMessage();
-    setInterval(updateRefreshMessage, 30000);   // keep the "next update" time current
     setInterval(checkForUpdate, 60000);          // watch the CSV's timestamp for new data
     document.addEventListener("visibilitychange",function(){ if(!document.hidden) checkForUpdate(); });
 
