@@ -33,15 +33,15 @@
 
   .layout{display:flex;gap:20px;align-items:flex-start}
   .panel{flex:0 0 300px;width:300px;background:var(--surface);border:1px solid var(--hair);border-radius:10px;padding:4px 0}
-  .series-panel{flex:0 0 244px;width:244px}
+  .series-panel{flex:0 0 290px;width:290px}
   .series-panel .series{max-height:62vh}
   .stage{flex:1 1 auto;min-width:0}
 
   .group{padding:13px 16px;border-bottom:1px solid var(--hair-2)}
   .group:last-child{border-bottom:0}
-  .group.disabled{opacity:.42;pointer-events:none}
   .group > .label{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 9px;display:block}
   .hint{font-size:11.5px;color:var(--muted);margin:8px 0 0}
+  .hint a{color:var(--accent)}
 
   .seg{display:flex;border:1px solid var(--hair);border-radius:7px;overflow:hidden;background:var(--paper)}
   .seg button{flex:1 1 0;appearance:none;border:0;background:transparent;cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:7px 4px;letter-spacing:.01em;transition:background .12s,color .12s;border-right:1px solid var(--hair);white-space:nowrap}
@@ -50,10 +50,6 @@
 
   .row{display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap}
   .row label{font-size:12.5px;color:var(--ink)}
-  .stepper{display:flex;align-items:center;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
-  .stepper button{appearance:none;border:0;background:var(--paper);cursor:pointer;width:26px;height:28px;font-size:15px;color:var(--muted);font-family:var(--mono)}
-  .stepper button:hover{background:var(--accent-soft);color:var(--accent)}
-  .stepper input{width:46px;border:0;border-left:1px solid var(--hair);border-right:1px solid var(--hair);text-align:center;font-family:var(--mono);font-size:12px;padding:5px 0}
 
   .presets{display:flex;gap:6px;flex-wrap:wrap}
   .presets button{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--hair);background:var(--paper);border-radius:6px;padding:5px 9px;cursor:pointer}
@@ -74,6 +70,8 @@
   .mini{display:flex;gap:10px;margin-top:9px;flex-wrap:wrap}
   .mini button{appearance:none;border:0;background:none;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--accent);padding:0}
   .mini button:hover{text-decoration:underline}
+  .mini-note{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .label-note{text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400}
 
   .filebtn{font-family:var(--mono);font-size:11.5px;color:var(--ink);border:1px solid var(--hair);border-radius:7px;padding:7px 10px;cursor:pointer;background:var(--surface)}
   .filebtn:hover{background:var(--accent-soft);border-color:var(--accent)}
@@ -125,8 +123,9 @@
 <div class="wrap">
   <header class="masthead">
     <div>
-      <p class="eyebrow">Nambé · Pojoaque · Tesuque<br>graphical gauge display</p>
+      <p class="eyebrow">Rio Nambé · Rio Pojoaque<br>graphical gauge display</p>
       <h1>NPT Acequia Flow Explorer (Beta Version 1)</h1>
+      <p>Reads <code style="font-family:var(--mono);font-size:12px">discharge_cfs_wide.csv</code> produced by the gauge fetcher. Every control is data-agnostic; the units are not.</p>
     </div>
     <div class="right" id="dataStamp">no data loaded</div>
   </header>
@@ -172,34 +171,20 @@
         <div class="seg" id="resampleSeg" role="group" aria-label="Averaging">
           <button type="button" data-v="raw" aria-pressed="true">Raw 15-min</button>
           <button type="button" data-v="hour">Hourly</button>
-          <button type="button" data-v="day">Daily</button>
         </div>
-        <p class="hint">Mean within each bucket. Daily is the standard hydrograph view and keeps long ranges fast.</p>
-      </div>
-
-      <div class="group" id="smoothGroup">
-        <span class="label">Smoothing</span>
-        <div class="row">
-          <div class="stepper">
-            <button type="button" id="smoothDown" aria-label="Decrease">−</button>
-            <input type="number" id="smoothVal" value="2" min="1" max="200" />
-            <button type="button" id="smoothUp" aria-label="Increase">+</button>
-          </div>
-          <label for="smoothVal">point rolling mean</label>
-        </div>
-        <p class="hint">Applied to the averaged series. (Off for Total — a cumulative curve shouldn't be smoothed.)</p>
       </div>
 
       <div class="group">
-        <span class="label">Scale</span>
-        <div class="seg" id="scaleSeg" role="group" aria-label="Y scale">
-          <button type="button" data-v="linear" aria-pressed="true">Linear</button>
-          <button type="button" data-v="log">Logarithmic</button>
-        </div>
+        <span class="label">Vertical scale</span>
         <div class="row">
           <label for="ymaxVal">y-axis max</label>
           <input type="number" id="ymaxVal" placeholder="auto" step="any" style="width:84px" />
           <button class="filebtn ghost" id="ymaxAuto" type="button" style="padding:5px 9px">auto</button>
+        </div>
+        <div class="row">
+          <label for="yminVal">y-axis min</label>
+          <input type="number" id="yminVal" placeholder="auto" step="any" style="width:84px" />
+          <button class="filebtn ghost" id="yminAuto" type="button" style="padding:5px 9px">auto</button>
         </div>
         <p class="hint">Leave blank to fit the data. Resets to auto when you switch measure.</p>
       </div>
@@ -236,12 +221,16 @@
 
     <aside class="panel series-panel" aria-label="Series">
       <div class="group">
-        <span class="label">Series</span>
+        <span class="label">Series <span class="label-note">(upstream on top)</span></span>
         <div class="series" id="seriesList"></div>
         <div class="mini">
           <button type="button" id="showAll">Show all</button>
           <button type="button" id="showNone">Hide all</button>
+          <span class="mini-note">(square checkboxes)</span>
+        </div>
+        <div class="mini">
           <button type="button" id="clearEmph">Clear emphasis</button>
+          <span class="mini-note">(round checkboxes)</span>
         </div>
         <p class="hint">Checkbox shows/hides. Click a name to emphasize it (others fade).</p>
       </div>
@@ -261,8 +250,8 @@
     return "hsl("+hue.toFixed(0)+" "+sat+"% "+lt+"%)";
   });
 
-  var state={measure:"cfs",resample:"raw",scale:"linear",smooth:2,adjust:false,
-             winStart:null,winEnd:null,winAll:true,ymax:null,visible:new Set(),emph:new Set()};
+  var state={measure:"cfs",resample:"raw",scale:"linear",adjust:false,
+             winStart:null,winEnd:null,winAll:true,ymax:null,ymin:null,visible:new Set(),emph:new Set()};
   var rawData=null;         // the loaded CSV, never modified
   var data=null;            // active view: rawData, or the adjusted version
   var resampleCache={key:null,val:null};
@@ -400,8 +389,7 @@
     if(!t.length) throw new Error("No parseable timestamps in the first column.");
     return {names:names,t:t,cols:cols};
   }
-  function bucketKey(d,mode){ var x=new Date(d.getTime());
-    if(mode==="hour")x.setMinutes(0,0,0); else if(mode==="day")x.setHours(0,0,0,0); return x.getTime(); }
+  function bucketKey(d,mode){ var x=new Date(d.getTime()); x.setMinutes(0,0,0); return x.getTime(); }
   function resample(d,mode){
     if(mode==="raw"){ var c={}; d.names.forEach(function(n){c[n]=d.cols[n].slice();}); return {t:d.t.slice(),cols:c}; }
     var buckets=new Map(),order=[];
@@ -414,12 +402,6 @@
     var t=order.map(function(k){return new Date(k);}),cols={}; d.names.forEach(function(n){cols[n]=[];});
     order.forEach(function(k){ var b=buckets.get(k); d.names.forEach(function(n){cols[n].push(b[n]?b[n].s/b[n].c:null);}); });
     return {t:t,cols:cols};
-  }
-  function rollingMean(arr,w){ if(w<=1)return arr.slice();
-    var out=new Array(arr.length),q=[],sum=0,cnt=0;
-    for(var i=0;i<arr.length;i++){ var v=arr[i]; q.push(v); if(v!=null){sum+=v;cnt++;}
-      if(q.length>w){var o=q.shift(); if(o!=null){sum-=o;cnt--;}} out[i]=cnt>0?sum/cnt:null; }
-    return out;
   }
   function toAF(t,vals){ var out=new Array(vals.length),acc=0,pt=null,pv=null;
     for(var i=0;i<vals.length;i++){ var v=vals[i];
@@ -533,15 +515,16 @@
         var af=toAF(tWin,cfs), allow=ALLOWABLES[nm];
         disp=(allow&&allow>0)?af.map(function(v){return v==null?null:v/allow*100;}):af.map(function(){return null;});
       } else if(state.measure==="af"){ disp=toAF(tWin,cfs); }
-      else { disp=state.smooth>1?rollingMean(cfs,state.smooth):cfs; }
+      else { disp=cfs; }
       for(var k=0;k<disp.length;k++){ var y=disp[k]; if(y!=null&&isFinite(y)){ if(state.scale==="log"&&y<=0)continue; if(y<ymin)ymin=y; if(y>ymax)ymax=y; } }
       var ci=data.names.indexOf(nm);
       series.push({name:nm,col:PALETTE[ci%PALETTE.length],disp:disp,cfs:cfs,emph:state.emph.has(nm)});
     });
     if(!isFinite(ymin)){ymin=0;ymax=1;}
     if(state.scale==="log"){ if(ymin<=0)ymin=1; } else { if(ymin>0)ymin=0; }
+    if(state.ymin!=null&&isFinite(state.ymin)) ymin=state.ymin;     // user-set floor
+    if(state.ymax!=null&&isFinite(state.ymax)) ymax=state.ymax;     // user-set ceiling
     if(ymax<=ymin)ymax=ymin+1;
-    if(state.ymax!=null&&isFinite(state.ymax)&&state.ymax>ymin){ ymax=state.ymax; }
 
     var emphNames=series.filter(function(s){return s.emph;}).map(function(s){return s.name;});
     var longest=emphNames.reduce(function(m,n){return Math.max(m,n.length);},0);
@@ -567,15 +550,33 @@
     parts.push('<text class="axis-title" transform="translate(14,'+(mT+ph/2)+') rotate(-90)" text-anchor="middle">'+yTitle()+'</text>');
     parts.push('</g>');
 
-    function pathFor(disp){ var d="",pen=false;
+    // In Flow(cfs) + Raw 15-min + Smoothing 1, connect each gauge's actual
+    // readings into a continuous line and mark each reading with a small dot,
+    // instead of letting the shared-timestamp grid fragment it into blanks.
+    var dotMode = (state.measure==="cfs" && state.resample==="raw");
+    var drawDots=false;
+    if(dotMode){
+      var tot=0; for(var si=0;si<series.length;si++){ var dd=series[si].disp;
+        for(var di=0;di<dd.length;di++){ var yy=dd[di]; if(yy!=null&&isFinite(yy)&&!(state.scale==="log"&&yy<=0)) tot++; } }
+      drawDots = tot<=15000;   // beyond this the dots smear together; show the bridged line only
+    }
+    function pathFor(disp,bridge){ var d="",pen=false;
       for(var i=0;i<disp.length;i++){ var y=disp[i];
-        if(y==null||!isFinite(y)||(state.scale==="log"&&y<=0)){pen=false;continue;}
+        if(y==null||!isFinite(y)||(state.scale==="log"&&y<=0)){ if(!bridge)pen=false; continue; }
         var X=px(tWin[i].getTime()).toFixed(1),Y=py(y).toFixed(1); d+=(pen?"L":"M")+X+" "+Y+" "; pen=true; }
       return d; }
+    function dotsFor(disp,fill,r){ var s="";
+      for(var i=0;i<disp.length;i++){ var y=disp[i];
+        if(y==null||!isFinite(y)||(state.scale==="log"&&y<=0)) continue;
+        s+='<circle cx="'+px(tWin[i].getTime()).toFixed(1)+'" cy="'+py(y).toFixed(1)+'" r="'+r+'" fill="'+fill+'"/>'; }
+      return s; }
     var hasEmph=state.emph.size>0;
     function draw(list,emph){ list.forEach(function(sr){
       var stroke=(hasEmph&&!emph)?"var(--grey-line)":sr.col, w=emph?2.6:(hasEmph?1.1:1.7), op=(hasEmph&&!emph)?0.85:1;
-      parts.push('<path d="'+pathFor(sr.disp)+'" fill="none" stroke="'+stroke+'" stroke-width="'+w+'" stroke-linejoin="round" stroke-linecap="round" opacity="'+op+'"/>'); }); }
+      if(dotMode) w=emph?2.0:(hasEmph?1.0:1.3);    // thinner line so the dots read clearly
+      parts.push('<path d="'+pathFor(sr.disp,dotMode)+'" fill="none" stroke="'+stroke+'" stroke-width="'+w+'" stroke-linejoin="round" stroke-linecap="round" opacity="'+op+'"/>');
+      if(dotMode&&drawDots){ parts.push('<g opacity="'+op+'">'+dotsFor(sr.disp,stroke,emph?2.4:1.6)+'</g>'); }
+    }); }
     parts.push('<clipPath id="plotclip"><rect x="'+mL+'" y="'+mT+'" width="'+pw+'" height="'+ph+'"/></clipPath>');
     parts.push('<g clip-path="url(#plotclip)">');
     draw(series.filter(function(s){return !s.emph;}),false);
@@ -608,17 +609,16 @@
   function yTitle(){
     if(state.measure==="pct") return "cumulative volume / Aamodt 1978 annual volume (%), since "+(state.winStart?fmtDateShort(state.winStart):"start");
     if(state.measure==="af") return "cumulative volume — AF since "+(state.winStart?fmtDateShort(state.winStart):"start");
-    return "discharge (cfs)"+(state.smooth>1?" ("+state.smooth+"-pt mean)":"");
+    return "discharge (cfs)";
   }
   function renderStatus(){
     var el=document.getElementById("statusline");
     function k(a,b){return '<span><span class="seg-k">'+a+'</span> <b>'+b+'</b></span>';}
     var nvis=data.names.filter(function(n){return state.visible.has(n);}).length;
     var win=(state.winStart&&state.winEnd)?(fmtDateShort(state.winStart)+"→"+fmtDateShort(state.winEnd)):"all";
-    var rs={raw:"15-min",hour:"hourly",day:"daily"}[state.resample];
+    var rs={raw:"15-min",hour:"hourly"}[state.resample];
     var mlabel={cfs:"discharge (cfs)",af:"total (AF)",pct:"total (% of Aamodt)"}[state.measure];
-    var bits=[k("measure",mlabel),k("averaging",rs),k("scale",state.scale)];
-    if(state.measure==="cfs"&&state.smooth>1) bits.push(k("smooth",state.smooth+"-pt"));
+    var bits=[k("measure",mlabel),k("averaging",rs)];
     bits.push(k("window",win)); bits.push(k("gauges",nvis+"/"+data.names.length));
     el.innerHTML=bits.join("");
   }
@@ -699,12 +699,12 @@
   }
 
   function applyMeasureUI(){
-    document.getElementById("smoothGroup").classList.toggle("disabled",state.measure!=="cfs");
     document.getElementById("measureHint").textContent =
         state.measure==="pct" ? "Cumulative volume as a percent of each acequia's Aamodt 1978 annual allowable (hover the button for the table)."
       : state.measure==="af"  ? "Cumulative acre-feet past each gauge since the window start (∫ cfs·dt ÷ 43,560)."
       :                         "Instantaneous flow rate at each gauge.";
     state.ymax=null; var ym=document.getElementById("ymaxVal"); if(ym)ym.value="";
+    state.ymin=null; var yn=document.getElementById("yminVal"); if(yn)yn.value="";
     buildSeriesList();
   }
   function setWindow(start,end){ state.winStart=start; state.winEnd=end;
@@ -755,7 +755,7 @@
   function clock(d){ return d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}); }
   function updateRefreshMessage(){
     var el=document.getElementById("refreshMsg"); if(!el) return;
-    var lines=["GitHub refreshes data a few times per day."];
+    var lines=['GitHub refreshes data a few times per day. For the most recent gauge readings, go to <a href="https://meas.ose.state.nm.us/district6.jsp" target="_blank" rel="noopener">OSE District 6</a>.'];
     if(lastModified){ var lm=new Date(lastModified); if(!isNaN(lm)) lines.push("Last updated "+clock(lm)+"."); }
     el.innerHTML=lines.join("<br>");
   }
@@ -770,7 +770,6 @@
   function init(){
     wireSeg("measureSeg","measure",applyMeasureUI);
     wireSeg("resampleSeg","resample");
-    wireSeg("scaleSeg","scale");
 
     (function(){ var seg=document.getElementById("adjustSeg");
       seg.querySelectorAll("button").forEach(function(b){ b.addEventListener("click",function(){
@@ -778,16 +777,15 @@
         setAdjust(b.getAttribute("data-v")==="adjust");
       }); }); })();
 
-    var sv=document.getElementById("smoothVal");
-    function setSmooth(v){ v=Math.max(1,Math.min(200,Math.round(v||1))); state.smooth=v; sv.value=v; render(); }
-    sv.addEventListener("input",function(e){setSmooth(Number(e.target.value));});
-    document.getElementById("smoothUp").addEventListener("click",function(){setSmooth(state.smooth+1);});
-    document.getElementById("smoothDown").addEventListener("click",function(){setSmooth(state.smooth-1);});
-
     var ymv=document.getElementById("ymaxVal");
     ymv.addEventListener("input",function(e){ var t=e.target.value.trim(); var v=Number(t);
       state.ymax=(t!==""&&isFinite(v))?v:null; render(); });
     document.getElementById("ymaxAuto").addEventListener("click",function(){ state.ymax=null; ymv.value=""; render(); });
+
+    var ynv=document.getElementById("yminVal");
+    ynv.addEventListener("input",function(e){ var t=e.target.value.trim(); var v=Number(t);
+      state.ymin=(t!==""&&isFinite(v))?v:null; render(); });
+    document.getElementById("yminAuto").addEventListener("click",function(){ state.ymin=null; ynv.value=""; render(); });
 
     document.getElementById("presets").querySelectorAll("button").forEach(function(b){
       b.addEventListener("click",function(){ var w=b.getAttribute("data-w"), ex=dataExtent();
@@ -820,7 +818,7 @@
       if(!btn) return;
       var body=AAMODT.map(function(r){ var n=r[0], gap=18-n.length; if(gap<2)gap=2;
         return n + new Array(gap+1).join("\u00A0") + r[1]; }).join("\n");
-      btn.setAttribute("data-info","Aamodt 1978 allowables (AF/yr)\n"+body);
+      btn.setAttribute("data-info","Aamodt 1978 allowables (AF/yr)\n(Pueblo values are for 1st-priority acres)\n"+body);
     })();
 
     // hover/focus info bubbles for any element with data-info
