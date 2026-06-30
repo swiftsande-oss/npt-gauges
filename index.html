@@ -50,6 +50,7 @@
 
   .row{display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap}
   .row label{font-size:12.5px;color:var(--ink)}
+  .row select{font-family:var(--mono);font-size:12px;padding:4px 7px;border:1px solid var(--hair);border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer}
 
   .presets{display:flex;gap:6px;flex-wrap:wrap}
   .presets button{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--hair);background:var(--paper);border-radius:6px;padding:5px 9px;cursor:pointer}
@@ -143,7 +144,15 @@
     <aside class="panel controls" aria-label="Controls">
       <div class="group">
         <span class="label">Data</span>
-        <p class="hint" id="refreshMsg" style="margin-top:0">Loading…</p>
+        <div class="seg" id="yearModeSeg" role="group" aria-label="Data year">
+          <button type="button" data-v="current" aria-pressed="true">This year</button>
+          <button type="button" data-v="prior" aria-pressed="false">Prior years</button>
+        </div>
+        <div class="row" id="yearPickRow" style="display:none">
+          <label for="yearSelect">year</label>
+          <select id="yearSelect"></select>
+        </div>
+        <p class="hint" id="refreshMsg" style="margin-top:9px">Loading…</p>
         <input type="file" id="mainFile" accept=".csv,text/csv,text/plain" />
       </div>
 
@@ -242,7 +251,8 @@
 (function(){
   "use strict";
 
-  var DATA_URL="data/discharge_cfs_wide.csv";
+  var LIVE_URL="data/discharge_cfs_wide.csv";
+  function currentUrl(){ return state.year ? "data/discharge_cfs_wide_"+state.year+".csv" : LIVE_URL; }
   var CF_PER_AF=43560;
 
   var PALETTE=Array.from({length:24},function(_,i){
@@ -251,7 +261,7 @@
   });
 
   var state={measure:"cfs",resample:"raw",scale:"linear",adjust:false,
-             winStart:null,winEnd:null,winAll:true,ymax:null,ymin:null,visible:new Set(),emph:new Set()};
+             winStart:null,winEnd:null,winAll:true,ymax:null,ymin:null,year:null,visible:new Set(),emph:new Set()};
   var rawData=null;         // the loaded CSV, never modified
   var data=null;            // active view: rawData, or the adjusted version
   var resampleCache={key:null,val:null};
@@ -725,7 +735,8 @@
     }
   }
 
-  function loadText(text,stamp){
+  function loadText(text,stamp,resetWindow){
+    if(resetWindow){ state.winStart=null; state.winEnd=null; state.winAll=true; }
     rawData=loadWide(text);
     data = state.adjust ? computeAdjusted(rawData) : rawData;
     resampleCache={key:null,val:null};
@@ -735,36 +746,59 @@
       (stamp||"loaded")+"<br>"+data.names.length+" gauges · "+data.t.length.toLocaleString()+" rows<br>"+fmtDateShort(ex.min)+" – "+fmtDateShort(ex.max);
     document.getElementById("emptyState").style.display="none";
     document.getElementById("mainUI").style.display="flex";
-    initControlsForData(); buildSeriesList(); applyMeasureUI(); render();
+    initControlsForData(); updateMeasureAvailability(); buildSeriesList(); applyMeasureUI(); render();
   }
-  function readFile(file){ var r=new FileReader(); r.onload=function(){ try{ loadText(r.result,"loaded "+file.name); }catch(err){ alert("Couldn't read that CSV: "+err.message); } }; r.readAsText(file); }
+  function readFile(file){ var r=new FileReader(); r.onload=function(){ try{ loadText(r.result,"loaded "+file.name,true); }catch(err){ alert("Couldn't read that CSV: "+err.message); } }; r.readAsText(file); }
 
   function setStamp(html){ document.getElementById("dataStamp").innerHTML=html; }
 
   var lastModified=null;   // Last-Modified header of the CSV currently loaded
 
-  function reloadFromFile(userAction){
-    return fetch(DATA_URL,{cache:"no-store"}).then(function(res){ if(!res.ok)throw new Error("nf");
+  function reloadFromFile(userAction,resetWindow){
+    var url=currentUrl();
+    return fetch(url,{cache:"no-store"}).then(function(res){ if(!res.ok)throw new Error("nf");
         lastModified=res.headers.get("Last-Modified")||lastModified; return res.text(); })
-      .then(function(txt){ loadText(txt,"loaded "+DATA_URL); updateRefreshMessage(); return true; })
-      .catch(function(){ if(userAction) setStamp("Couldn't load "+DATA_URL+"."); return false; });
+      .then(function(txt){ loadText(txt,"loaded "+url,resetWindow); updateRefreshMessage(); return true; })
+      .catch(function(){ if(userAction) setStamp("Couldn't load "+url+"."); return false; });
   }
-  function tryAutoLoad(){ return reloadFromFile(false); }
+  function tryAutoLoad(){ return reloadFromFile(false,true); }
 
-  // ----- synchronized auto-refresh: watch the CSV's timestamp, reload on change
+  // ----- synchronized auto-refresh: watch the live CSV's timestamp, reload on change
   function clock(d){ return d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}); }
   function updateRefreshMessage(){
     var el=document.getElementById("refreshMsg"); if(!el) return;
-    var lines=['GitHub refreshes data a few times per day. For the most recent gauge readings, go to <a href="https://meas.ose.state.nm.us/district6.jsp" target="_blank" rel="noopener">OSE District 6</a>.'];
-    if(lastModified){ var lm=new Date(lastModified); if(!isNaN(lm)) lines.push("Last updated "+clock(lm)+"."); }
+    var lines;
+    if(state.year){
+      lines=["Showing "+state.year+" — a completed year (static)."];
+    } else {
+      lines=['GitHub refreshes data a few times per day. For the most recent gauge readings, go to <a href="https://meas.ose.state.nm.us/district6.jsp" target="_blank" rel="noopener">OSE District 6</a>.'];
+      if(lastModified){ var lm=new Date(lastModified); if(!isNaN(lm)) lines.push("Last updated "+clock(lm)+"."); }
+    }
     el.innerHTML=lines.join("<br>");
   }
   function checkForUpdate(){
-    fetch(DATA_URL,{method:"HEAD",cache:"no-store"}).then(function(res){
+    if(state.year) return;   // completed prior years never change
+    fetch(LIVE_URL,{method:"HEAD",cache:"no-store"}).then(function(res){
       if(!res.ok) return;
       var lm=res.headers.get("Last-Modified");
-      if(lm && lm!==lastModified) reloadFromFile(false);   // file changed -> the Action committed new data
+      if(lm && lm!==lastModified) reloadFromFile(false,false);   // file changed -> the Action committed new data
     }).catch(function(){});
+  }
+
+  // Discover which prior-year files exist by probing data/discharge_cfs_wide_YYYY.csv
+  var yearsProbed=false, yearsAvail=[];
+  function probeYears(cb){
+    if(yearsProbed){ cb(yearsAvail); return; }
+    var now=new Date().getFullYear(), years=[];
+    for(var y=2011; y<=now-1; y++) years.push(y);
+    var pending=years.length, found=[];
+    if(!pending){ yearsProbed=true; yearsAvail=[]; cb([]); return; }
+    years.forEach(function(y){
+      fetch("data/discharge_cfs_wide_"+y+".csv",{method:"HEAD",cache:"no-store"})
+        .then(function(res){ if(res.ok) found.push(y); })
+        .catch(function(){})
+        .finally(function(){ if(--pending===0){ found.sort(function(a,b){return b-a;}); yearsProbed=true; yearsAvail=found; cb(found); } });
+    });
   }
 
   function init(){
@@ -776,6 +810,33 @@
         seg.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});
         setAdjust(b.getAttribute("data-v")==="adjust");
       }); }); })();
+
+    (function(){ var seg=document.getElementById("yearModeSeg"), row=document.getElementById("yearPickRow"), sel=document.getElementById("yearSelect");
+      function press(b){ seg.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");}); }
+      seg.querySelectorAll("button").forEach(function(b){ b.addEventListener("click",function(){
+        var mode=b.getAttribute("data-v"); press(b);
+        if(mode==="current"){
+          row.style.display="none";
+          if(state.year===null) return;        // already on the live year
+          state.year=null; reloadFromFile(true,true);
+        } else {
+          row.style.display="";
+          if(state.year!==null) return;         // already showing a prior year
+          document.getElementById("refreshMsg").textContent="Looking for prior-year files…";
+          probeYears(function(years){
+            sel.innerHTML="";
+            if(!years.length){
+              press(seg.querySelector('[data-v="current"]')); row.style.display="none";
+              document.getElementById("refreshMsg").textContent="No prior-year files found in data/.";
+              return;
+            }
+            years.forEach(function(y){ var o=document.createElement("option"); o.value=y; o.textContent=y; sel.appendChild(o); });
+            sel.value=years[0]; state.year=years[0]; reloadFromFile(true,true);
+          });
+        }
+      }); });
+      sel.addEventListener("change",function(e){ state.year=Number(e.target.value); reloadFromFile(true,true); });
+    })();
 
     var ymv=document.getElementById("ymaxVal");
     ymv.addEventListener("input",function(e){ var t=e.target.value.trim(); var v=Number(t);
