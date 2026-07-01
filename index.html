@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NPT Acequia Flow Explorer</title>
+<title>PVID Gauge Explorer</title>
 <style>
   :root{
     --paper:#EEF1F3; --surface:#FFFFFF; --ink:#18222B; --muted:#5A6873;
@@ -124,9 +124,8 @@
 <div class="wrap">
   <header class="masthead">
     <div>
-      <p class="eyebrow">Rio Nambé · Rio Pojoaque<br>graphical gauge display</p>
-      <h1>NPT Acequia Flow Explorer (Beta Version 1)</h1>
-      <p>Reads <code style="font-family:var(--mono);font-size:12px">discharge_cfs_wide.csv</code> produced by the gauge fetcher. Every control is data-agnostic; the units are not.</p>
+      <p class="eyebrow">Rio Nambé · Rio Pojoaque</p>
+      <h1>PVID Gauge Explorer (Beta Version 1)</h1>
     </div>
     <div class="right" id="dataStamp">no data loaded</div>
   </header>
@@ -195,7 +194,7 @@
           <input type="number" id="yminVal" placeholder="auto" step="any" style="width:84px" />
           <button class="filebtn ghost" id="yminAuto" type="button" style="padding:5px 9px">auto</button>
         </div>
-        <p class="hint">Leave blank to fit the data. Resets to auto when you switch measure.</p>
+        <p class="hint">Leave auto to fit the data. Resets to auto when you switch measure.</p>
       </div>
 
       <div class="group">
@@ -657,9 +656,8 @@
       rows.sort(function(a,b){ if(a.emph!==b.emph)return a.emph?-1:1; return (b.val==null?-Infinity:b.val)-(a.val==null?-Infinity:a.val); });
       var unit=state.measure==="pct"?" %":state.measure==="af"?" AF":" cfs";
       var html='<div class="tt-x">'+fmtFull(geom.tWin[i])+'</div>';
-      rows.slice(0,14).forEach(function(r){ var cls=geom.hasEmph?(r.emph?"":"dim"):"";
-        var sub=(state.measure==="af"||state.measure==="pct")?'<div class="tt-sub">'+fmt(r.cfs)+' cfs now</div>':"";
-        html+='<div class="tt-row '+cls+'"><div class="tt-left"><span class="swatch" style="background:'+r.col+'"></span><div><span class="tt-name">'+r.name+'</span>'+sub+'</div></div><span class="tt-val">'+fmt(r.val)+unit+'</span></div>'; });
+      rows.forEach(function(r){ var cls=geom.hasEmph?(r.emph?"":"dim"):"";
+        html+='<div class="tt-row '+cls+'"><div class="tt-left"><span class="swatch" style="background:'+r.col+'"></span><span class="tt-name">'+r.name+'</span></div><span class="tt-val">'+fmt(r.val)+unit+'</span></div>'; });
       tip.innerHTML=html; tip.style.opacity="1";
       var card=document.querySelector(".chartcard").getBoundingClientRect();
       var mouseX=clientX-card.left, tw=tip.offsetWidth, off=14, m=8;
@@ -814,7 +812,12 @@
     (function(){ var seg=document.getElementById("yearModeSeg"), row=document.getElementById("yearPickRow"), sel=document.getElementById("yearSelect");
       function press(b){ seg.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");}); }
       seg.querySelectorAll("button").forEach(function(b){ b.addEventListener("click",function(){
-        var mode=b.getAttribute("data-v"); press(b);
+        var mode=b.getAttribute("data-v");
+        if(location.protocol==="file:"){
+          document.getElementById("refreshMsg").innerHTML="Year switching needs the page served. Launch it with <b>launchFromMyPC.py</b>, or view it on GitHub. (Opened directly, use the file picker to choose a year's CSV by hand.)";
+          return;
+        }
+        press(b);
         if(mode==="current"){
           row.style.display="none";
           if(state.year===null) return;        // already on the live year
