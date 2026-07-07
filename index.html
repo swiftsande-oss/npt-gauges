@@ -911,7 +911,7 @@
 
     document.getElementById("presets").querySelectorAll("button").forEach(function(b){
       b.addEventListener("click",function(){ var w=b.getAttribute("data-w"), ex=dataExtent();
-        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; }
+        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; clearSchedule(); rebuildCycleButtons(); }
         else { var days=Number(w); var start=new Date(ex.max.getTime()-days*864e5); if(start<ex.min)start=ex.min; setWindow(start,ex.max); state.winAll=false; }
         updateMeasureAvailability(); render(); }); });
     document.getElementById("startDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winStart=d;state.winAll=false;updateMeasureAvailability();render();} });
