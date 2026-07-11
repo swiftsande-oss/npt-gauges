@@ -1,130 +1,130 @@
 {
-  "run_utc": "2026-07-11T14:37:51Z",
+  "run_utc": "2026-07-11T18:09:09Z",
   "gauges": {
     "High Line": {
       "id": 22,
-      "added": 14,
-      "latest": "2026-07-11 07:30",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Upper Consolidated": {
       "id": 43,
-      "added": 14,
-      "latest": "2026-07-11 08:00",
+      "added": 10,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Lower Consolidated": {
       "id": 28,
-      "added": 14,
-      "latest": "2026-07-11 08:00",
+      "added": 9,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Nueva": {
       "id": 31,
-      "added": 12,
-      "latest": "2026-07-11 08:00",
+      "added": 4,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Llano": {
       "id": 27,
-      "added": 13,
-      "latest": "2026-07-11 07:43",
+      "added": 8,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Comunidad": {
       "id": 6,
-      "added": 10,
-      "latest": "2026-07-11 07:30",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Ortiz": {
       "id": 33,
-      "added": 14,
-      "latest": "2026-07-11 07:30",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Gardunos": {
       "id": 21,
-      "added": 13,
-      "latest": "2026-07-11 08:00",
+      "added": 11,
+      "latest": "2026-07-11 11:30",
       "ok": true
     },
     "Jose G. Ortiz": {
       "id": 24,
-      "added": 10,
-      "latest": "2026-07-11 07:59",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Cano": {
       "id": 5,
-      "added": 12,
-      "latest": "2026-07-11 07:59",
+      "added": 3,
+      "latest": "2026-07-11 10:30",
       "ok": true
     },
     "Rincon": {
       "id": 39,
-      "added": 13,
-      "latest": "2026-07-11 07:59",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Las Joyas": {
       "id": 26,
       "added": 8,
-      "latest": "2026-07-11 06:45",
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Trujillos": {
       "id": 42,
-      "added": 14,
-      "latest": "2026-07-11 07:30",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Barranco Alto": {
       "id": 3,
-      "added": 13,
-      "latest": "2026-07-11 07:30",
+      "added": 10,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Larga": {
       "id": 25,
       "added": 11,
-      "latest": "2026-07-11 07:30",
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Ancon de Jacona": {
       "id": 1,
-      "added": 10,
-      "latest": "2026-07-11 07:00",
+      "added": 6,
+      "latest": "2026-07-11 10:57",
       "ok": true
     },
     "Barranco": {
       "id": 2,
-      "added": 14,
-      "latest": "2026-07-11 07:30",
+      "added": 10,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "Otra Vanda": {
       "id": 45,
-      "added": 13,
-      "latest": "2026-07-11 08:08",
+      "added": 7,
+      "latest": "2026-07-11 10:45",
       "ok": true
     },
     "Rancho": {
       "id": 38,
-      "added": 12,
-      "latest": "2026-07-11 07:43",
+      "added": 8,
+      "latest": "2026-07-11 10:45",
       "ok": true
     },
     "Indios": {
       "id": 23,
-      "added": 14,
-      "latest": "2026-07-11 07:30",
+      "added": 11,
+      "latest": "2026-07-11 11:15",
       "ok": true
     },
     "San Ildefonso": {
       "id": 41,
-      "added": 13,
-      "latest": "2026-07-11 08:00",
+      "added": 11,
+      "latest": "2026-07-11 11:30",
       "ok": true
     }
   }
