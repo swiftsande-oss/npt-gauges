@@ -42,6 +42,8 @@
   .group > .label{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 9px;display:block}
   .hint{font-size:11.5px;color:var(--muted);margin:8px 0 0}
   .hint a{color:var(--accent)}
+  .warn{font-size:11px;color:#b3261e;background:#fdecea;border:1px solid #f5c6c2;border-radius:6px;padding:7px 9px;margin:9px 0 0;line-height:1.5}
+  .warn b{font-weight:600}
 
   .seg{display:flex;border:1px solid var(--hair);border-radius:7px;overflow:hidden;background:var(--paper)}
   .seg button{flex:1 1 0;appearance:none;border:0;background:transparent;cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:7px 4px;letter-spacing:.01em;transition:background .12s,color .12s;border-right:1px solid var(--hair);white-space:nowrap}
@@ -126,7 +128,7 @@
   <header class="masthead">
     <div>
       <p class="eyebrow">Rio Nambé · Rio Pojoaque</p>
-      <h1>PVID Gauge Explorer (Beta Version 2)</h1>
+      <h1>PVID Gauge Explorer (Beta Version 2b)</h1>
     </div>
     <div class="right" id="dataStamp">no data loaded</div>
   </header>
@@ -160,7 +162,7 @@
         <span class="label">Adjust data</span>
         <div class="seg" id="adjustSeg" role="group" aria-label="Adjust data">
           <button type="button" data-v="none" aria-pressed="true" data-info="Raw OSE data">None</button>
-          <button type="button" data-v="adjust" data-info="NambePuebloNet = HighLine + UpperConsol − Nueva − Llano − Comunidad&#10;ConsolNet = UpperConsol − LowerConsol&#10;IndiosAdj = 1.0724 × (Indios cfs − 0.135 cfs)">Adjust</button>
+          <button type="button" data-v="adjust" data-info="NambePuebloNet = HighLine + UpperConsol − Nueva − Llano − Comunidad&#10;ConsolNet = UpperConsol − Nueva − Llano − Comunidad&#10;IndiosAdj = 1.0724 × (Indios cfs − 0.135 cfs)">Adjust</button>
         </div>
         <p class="hint">Hover a button for what it does. Adjust never changes the saved data.</p>
       </div>
@@ -209,6 +211,7 @@
       <div class="group" id="scheduleGroup" style="display:none">
         <span class="label">Schedules</span>
         <div class="presets" id="cycleButtons"></div>
+        <p class="warn" id="scheduleWarn" style="display:none"></p>
         <p class="hint">A cycle shows each acequia's scheduled diversion as a pastel band. Emphasize one or a few acequias (click their names) to compare scheduled vs. actual without clutter.</p>
       </div>
     </aside>
@@ -278,9 +281,10 @@
 
   // ---- ADJUST DATA: derived series, computed in-browser; the CSV is untouched.
   var ADJ_UP="Upper Consolidated", ADJ_LO="Lower Consolidated", ADJ_IN="Indios",
-      ADJ_HL="High Line", ADJ_NU="Nueva", ADJ_LL="Llano", ADJ_CO="Comunidad";
+      ADJ_HL="High Line", ADJ_NU="Nueva", ADJ_LL="Llano", ADJ_CO="Comunidad",
+      ADJ_DAM="Nambe Dam Discharge";
   function computeAdjusted(raw){
-    var hasConsol = raw.cols[ADJ_UP] && raw.cols[ADJ_LO];
+    var hasConsol = raw.cols[ADJ_UP] && raw.cols[ADJ_NU] && raw.cols[ADJ_LL] && raw.cols[ADJ_CO];
     var hasIndios = !!raw.cols[ADJ_IN];
     var hasNambe  = raw.cols[ADJ_HL] && raw.cols[ADJ_UP] && raw.cols[ADJ_NU] && raw.cols[ADJ_LL] && raw.cols[ADJ_CO];
 
@@ -319,12 +323,16 @@
       cols["NambePuebloNet"]=npn; names.push("NambePuebloNet");
     }
 
-    // ConsolNet = Upper - Lower, at Upper's times with Lower interpolated.
+    // ConsolNet = UpperConsol - Nueva - Llano - Comunidad, at Upper's reading
+    // times with the three subtractive gauges interpolated onto those times.
     if(hasConsol){
-      var iLo=makeInterp(ADJ_LO), cn=new Array(raw.t.length);
+      var iUp2=makeInterp(ADJ_UP), iNu2=makeInterp(ADJ_NU), iLl2=makeInterp(ADJ_LL), iCo2=makeInterp(ADJ_CO);
+      var cn=new Array(raw.t.length);
       for(var i=0;i<raw.t.length;i++){ var u2=raw.cols[ADJ_UP][i];
-        if(u2!=null&&isFinite(u2)){ var lo2=iLo(raw.t[i].getTime()); cn[i]=(lo2==null)?null:(u2-lo2); }
-        else cn[i]=null; }
+        if(u2!=null&&isFinite(u2)){ var ms2=raw.t[i].getTime();
+          var n2=iNu2(ms2), l2=iLl2(ms2), c2=iCo2(ms2);
+          cn[i]=(n2==null||l2==null||c2==null)?null:(u2-n2-l2-c2);
+        } else cn[i]=null; }
       cols["ConsolNet"]=cn; names.push("ConsolNet");
     }
 
@@ -340,6 +348,10 @@
       }
       cols[n]=raw.cols[n]; names.push(n);                       // (Nueva, Llano, Comunidad stay)
     });
+    // keep the upstream dam reference at the very top, even though the nets were
+    // pushed on first
+    var di=names.indexOf(ADJ_DAM);
+    if(di>0){ names.splice(di,1); names.unshift(ADJ_DAM); }
     return {names:names, t:raw.t, cols:cols};
   }
   function migrateSet(set, toAdjust){
@@ -511,6 +523,50 @@
       var ci=data.names.indexOf(nm);
       series.push({name:nm,col:PALETTE[ci%PALETTE.length],disp:disp,cfs:cfs,emph:state.emph.has(nm)});
     });
+    // ---- schedule helpers (also used by the underlay below). Defined here so the
+    // y-axis can be scaled to fit the schedule bands, not just the actual readings.
+    function schedConstituents(curve){
+      if(state.adjust){
+        if(curve==="NambePuebloNet") return [[1,ADJ_HL],[1,ADJ_UP],[-1,ADJ_NU],[-1,ADJ_LL],[-1,ADJ_CO]];
+        if(curve==="ConsolNet")      return [[1,ADJ_UP],[-1,ADJ_NU],[-1,ADJ_LL],[-1,ADJ_CO]];
+        if(curve==="IndiosAdj")      return [[1,ADJ_IN]];
+      }
+      return [[1,curve]];
+    }
+    function schedRows(curve){
+      if(!state.schedule) return [];
+      var out=[];
+      schedConstituents(curve).forEach(function(c){
+        state.schedule.rows.forEach(function(r){
+          if(r.acequia===c[1]) out.push({sign:c[0],cfs:r.cfs,s:r.start.getTime(),e:r.end.getTime()});
+        });
+      });
+      return out;
+    }
+    function schedCfsAt(rows,t){ var v=0;
+      rows.forEach(function(r){ if(t>=r.s&&t<r.e) v+=r.sign*r.cfs; }); return v; }
+    function schedAfAt(rows,t){ var af=0;
+      rows.forEach(function(r){ var dur=r.e-r.s; if(dur<=0) return;
+        af += r.sign*r.cfs*(Math.max(0,Math.min(t-r.s,dur))/1000)/CF_PER_AF; }); return af; }
+
+    if(state.schedule && (state.measure==="cfs"||state.measure==="af")){
+      var eOn=state.emph.size>0;
+      vis.forEach(function(nm){
+        if(eOn && !state.emph.has(nm)) return;
+        var rr=schedRows(nm); if(!rr.length) return;
+        var vals=[0];
+        if(state.measure==="cfs"){
+          var bps=[]; rr.forEach(function(r){ bps.push(r.s); bps.push(r.e); });
+          bps.sort(function(a,b){return a-b;});
+          for(var q=0;q+1<bps.length;q++) vals.push(schedCfsAt(rr,(bps[q]+bps[q+1])/2));
+        } else {
+          vals.push(schedAfAt(rr, tWin[tWin.length-1].getTime()));
+          vals.push(schedAfAt(rr, tWin[0].getTime()));
+        }
+        vals.forEach(function(y){ if(isFinite(y)){ if(state.scale==="log"&&y<=0)return; if(y<ymin)ymin=y; if(y>ymax)ymax=y; } });
+      });
+    }
+
     if(!isFinite(ymin)){ymin=0;ymax=1;}
     if(state.scale==="log"){ if(ymin<=0)ymin=1; } else { if(ymin>0)ymin=0; }
     if(state.ymin!=null&&isFinite(state.ymin)) ymin=state.ymin;     // user-set floor
@@ -573,27 +629,32 @@
     // schedule underlay (pastel bands), behind the actual-reading curves
     if(state.schedule && (state.measure==="cfs"||state.measure==="af")){
       var emphOn=state.emph.size>0, yBase=py(0);
-      state.schedule.rows.forEach(function(r){
-        var curve = (data.names.indexOf(r.acequia)>=0) ? r.acequia
-                  : (r.acequia==="Indios" && data.names.indexOf("IndiosAdj")>=0) ? "IndiosAdj"
-                  : null;
-        if(curve===null) return;                                    // only for a currently-shown curve
-        if(emphOn && !state.emph.has(curve)) return;                // when emphasizing, only those
+      data.names.forEach(function(curve){
+        if(!state.visible.has(curve)) return;
+        if(emphOn && !state.emph.has(curve)) return;      // when emphasizing, only those
+        var rows=schedRows(curve);
+        if(!rows.length) return;
         var ci=data.names.indexOf(curve), col=PALETTE[ci%PALETTE.length], fo=emphOn?0.22:0.12;
+
         if(state.measure==="cfs"){
-          var x0=Math.max(mL,Math.min(mL+pw,px(r.start.getTime())));
-          var x1=Math.max(mL,Math.min(mL+pw,px(r.end.getTime())));
-          if(x1<=x0) return;
-          var yTop=py(r.cfs);
-          parts.push('<rect x="'+x0.toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+(x1-x0).toFixed(1)+'" height="'+(yBase-yTop).toFixed(1)+'" fill="'+col+'" fill-opacity="'+fo+'"/>');
-          parts.push('<line x1="'+x0.toFixed(1)+'" y1="'+yTop.toFixed(1)+'" x2="'+x1.toFixed(1)+'" y2="'+yTop.toFixed(1)+'" stroke="'+col+'" stroke-opacity="'+(emphOn?0.7:0.4)+'"/>');
-        } else {   // Total (AF): scheduled cumulative volume — flat 0, linear ramp, flat
-          var s0=r.start.getTime(), dur=r.end.getTime()-s0;
-          if(dur<=0) return;
+          // scheduled flow is a step function of time; a net can step up/down and
+          // may even go negative, so evaluate it between successive breakpoints.
+          var bp=[]; rows.forEach(function(r){ bp.push(r.s); bp.push(r.e); });
+          bp.sort(function(a,b){return a-b;});
+          var u=[]; bp.forEach(function(v){ if(!u.length||u[u.length-1]!==v) u.push(v); });
+          for(var k=0;k+1<u.length;k++){
+            var a=u[k], b=u[k+1], v=schedCfsAt(rows,(a+b)/2);
+            if(v===0) continue;
+            var x0=Math.max(mL,Math.min(mL+pw,px(a))), x1=Math.max(mL,Math.min(mL+pw,px(b)));
+            if(x1<=x0) continue;
+            var yv=py(v), yTop=Math.min(yv,yBase), hh=Math.abs(yBase-yv);
+            parts.push('<rect x="'+x0.toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+(x1-x0).toFixed(1)+'" height="'+hh.toFixed(1)+'" fill="'+col+'" fill-opacity="'+fo+'"/>');
+            parts.push('<line x1="'+x0.toFixed(1)+'" y1="'+yv.toFixed(1)+'" x2="'+x1.toFixed(1)+'" y2="'+yv.toFixed(1)+'" stroke="'+col+'" stroke-opacity="'+(emphOn?0.7:0.4)+'"/>');
+          }
+        } else {   // Total (AF): cumulative scheduled volume, summed over all signed intervals
           var d="M "+px(tWin[0].getTime()).toFixed(1)+" "+yBase.toFixed(1)+" ";
           for(var i=0;i<tWin.length;i++){ var tms=tWin[i].getTime();
-            var af=r.cfs*(Math.max(0,Math.min(tms-s0,dur))/1000)/CF_PER_AF;
-            d+="L "+px(tms).toFixed(1)+" "+py(af).toFixed(1)+" "; }
+            d+="L "+px(tms).toFixed(1)+" "+py(schedAfAt(rows,tms)).toFixed(1)+" "; }
           d+="L "+px(tWin[tWin.length-1].getTime()).toFixed(1)+" "+yBase.toFixed(1)+" Z";
           parts.push('<path d="'+d+'" fill="'+col+'" fill-opacity="'+fo+'"/>');
         }
@@ -819,14 +880,46 @@
   function dataYear(){ return state.year || new Date().getFullYear(); }
   function parseSchedule(text){
     var out=[];
-    text.split(/\r?\n/).forEach(function(line){
+    text.split(/\r?\n/).forEach(function(line,ln){
       var p=line.split(","); if(p.length<4) return;
       var name=p[0].trim(), cfs=Number(p[1]),
           st=new Date(p[2].trim().replace(" ","T")), en=new Date(p[3].trim().replace(" ","T"));
       if(!name||!isFinite(cfs)||isNaN(st)||isNaN(en)) return;   // skips the header row too
-      out.push({acequia:name,cfs:cfs,start:st,end:en});
+      out.push({acequia:name,cfs:cfs,start:st,end:en,line:ln+1});
     });
     return out;
+  }
+
+  // Sanity-check a cycle file. A typo here draws a confident, wrong rectangle,
+  // so bad rows are reported rather than quietly rendered.
+  var MAX_CYCLE_DAYS=60;
+  function validateSchedule(rows,cycleYear){
+    var bad={}, warn=[];
+    function flag(r,why){ bad[r.line]=true; warn.push("line "+r.line+" ("+r.acequia+"): "+why); }
+    rows.forEach(function(r){
+      var sy=r.start.getFullYear(), ey=r.end.getFullYear();
+      if(cycleYear && (sy!==cycleYear || ey!==cycleYear))
+        flag(r,"date outside "+cycleYear+" (reads "+sy+(sy!==ey?"–"+ey:"")+")");
+      else if(r.end<=r.start) flag(r,"end is not after start");
+      else if((r.end-r.start)/864e5>MAX_CYCLE_DAYS) flag(r,"spans "+Math.round((r.end-r.start)/864e5)+" days");
+    });
+    // overlapping turns for the same acequia (summed, so an accidental overlap inflates the band)
+    var by={};
+    rows.forEach(function(r){ if(!bad[r.line]) (by[r.acequia]=by[r.acequia]||[]).push(r); });
+    Object.keys(by).forEach(function(nm){
+      var list=by[nm].slice().sort(function(a,b){return a.start-b.start;});
+      for(var i=0;i+1<list.length;i++){
+        if(list[i+1].start < list[i].end)
+          warn.push(nm+": overlapping turns (lines "+list[i].line+" & "+list[i+1].line+") — their flows are added together");
+      }
+    });
+    return {warn:warn, rows:rows.filter(function(r){return !bad[r.line];})};
+  }
+  function showScheduleWarn(list,file){
+    var el=document.getElementById("scheduleWarn");
+    if(!list||!list.length){ el.style.display="none"; el.innerHTML=""; return; }
+    el.style.display="";
+    el.innerHTML="<b>Check "+file+"</b><br>"+list.map(function(s){return "• "+s;}).join("<br>");
   }
   function rebuildCycleButtons(){
     var box=document.getElementById("cycleButtons"), grp=document.getElementById("scheduleGroup");
@@ -843,10 +936,12 @@
     });
   }
   function toggleCycle(c){
-    if(state.activeCycle===c.file){ state.schedule=null; state.activeCycle=null; rebuildCycleButtons(); render(); return; }
+    if(state.activeCycle===c.file){ clearSchedule(); showScheduleWarn(null); rebuildCycleButtons(); render(); return; }
     fetch("data/"+c.file,{cache:"no-store"}).then(function(r){ if(!r.ok)throw 0; return r.text(); })
       .then(function(txt){
-        state.schedule={name:c.name,file:c.file,rows:parseSchedule(txt)};
+        var v=validateSchedule(parseSchedule(txt), c.year);
+        showScheduleWarn(v.warn, c.file);                 // bad rows are reported, not drawn
+        state.schedule={name:c.name,file:c.file,rows:v.rows};
         state.activeCycle=c.file;
         var st=new Date(c.start.replace(" ","T")), en=new Date(c.end.replace(" ","T")), now=new Date();
         if(en>now) en=now;                       // ongoing cycle: end the axis at "now"
@@ -856,7 +951,7 @@
       })
       .catch(function(){ setStamp("Couldn't load "+c.file+"."); });
   }
-  function clearSchedule(){ state.schedule=null; state.activeCycle=null; }
+  function clearSchedule(){ state.schedule=null; state.activeCycle=null; showScheduleWarn(null); }
 
   function init(){
     wireSeg("measureSeg","measure",applyMeasureUI);
