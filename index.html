@@ -128,7 +128,7 @@
   <header class="masthead">
     <div>
       <p class="eyebrow">Rio Nambé · Rio Pojoaque</p>
-      <h1>PVID Gauge Explorer (Beta Version 2b)</h1>
+      <h1>PVID Gauge Explorer (Beta Version 2c)</h1>
     </div>
     <div class="right" id="dataStamp">no data loaded</div>
   </header>
@@ -150,7 +150,7 @@
           <button type="button" data-v="current" aria-pressed="true">This year</button>
           <button type="button" data-v="prior" aria-pressed="false">Prior years</button>
         </div>
-        <div class="row" id="yearPickRow" style="display:none">
+        <div class="row" id="yearPickRow" style="display:none;justify-content:flex-end">
           <label for="yearSelect">year</label>
           <select id="yearSelect"></select>
         </div>
@@ -170,9 +170,9 @@
       <div class="group">
         <span class="label">Measure</span>
         <div class="seg" id="measureSeg" role="group" aria-label="Measure">
-          <button type="button" data-v="cfs" aria-pressed="true">Flow (cfs)</button>
-          <button type="button" data-v="af" aria-pressed="false">Total (AF)</button>
-          <button type="button" data-v="pct" aria-pressed="false" style="display:none" data-info="Aamodt 1978 allowables">Total (%)</button>
+          <button type="button" data-v="cfs" aria-pressed="true">Flow(cfs)</button>
+          <button type="button" data-v="af" aria-pressed="false">Total(AF)</button>
+          <button type="button" data-v="afac" aria-pressed="false" style="display:none" data-info="Irrigable acres">TotalAF/acre</button>
         </div>
         <p class="hint" id="measureHint">Instantaneous flow rate at each gauge.</p>
       </div>
@@ -198,6 +198,7 @@
           <button type="button" data-w="1">24 h</button>
           <button type="button" data-w="7">7 d</button>
           <button type="button" data-w="30">30 d</button>
+          <button type="button" data-w="season">Season</button>
           <button type="button" data-w="all">All</button>
         </div>
         <div class="dt">
@@ -225,7 +226,7 @@
       </div>
       <footer>
         <span id="footnote">Hover the plot to read exact values. Total (AF) integrates discharge from the window start — change the start date to re-zero the accrual.</span>
-        <span><code>Based on OSE provisional data</code></span>
+        <span><code>Based on OSE provisional data. Website features planning by Greg Swift. Programming by Anthropic Claude Opus 4.8.</code></span>
       </footer>
     </main>
 
@@ -262,22 +263,32 @@
   });
 
   var state={measure:"cfs",resample:"raw",scale:"linear",adjust:false,
-             winStart:null,winEnd:null,winAll:true,ymax:null,ymin:null,year:null,schedule:null,activeCycle:null,visible:new Set(),emph:new Set()};
+             winStart:null,winEnd:null,winAll:true,winSeason:false,ymax:null,ymin:null,year:null,schedule:null,activeCycle:null,visible:new Set(),emph:new Set()};
   var rawData=null;         // the loaded CSV, never modified
   var data=null;            // active view: rawData, or the adjusted version
   var resampleCache={key:null,val:null};
 
-  // ---- Aamodt 1978 annual allowable volumes (acre-feet), as provided.
-  // Order is preserved for the hover table; the map is keyed by the curve's
-  // display name (Indios' allowable applies to the IndiosAdj curve).
-  var AAMODT=[
-    ["NambePuebloNet",1319],["Nueva",849],["Llano",424],["Comunidad",1028],["Ortiz",666],
-    ["Gardunos",89],["Jose G. Ortiz",78],["Cano",884],["Rincon",497],["Las Joyas",865],
-    ["Trujillos",353],["Barranco Alto",417],["Larga",646],["Ancon de Jacona",135],
-    ["Barranco",478],["Otra Vanda",939],["Rancho",318],["Indios",416],["San Ildefonso",728]
+  // ---- Irrigable acres (per year), the denominators for the TotalAF/acre view.
+  // Loaded from data/<year>irrigableAcres.csv; keyed by the curve's DISPLAY name.
+  // The file's "Indios" line applies to the IndiosAdj curve. Names are matched
+  // after normalizing (case/space/punctuation removed), so editors aren't brittle.
+  var ACRE_TARGETS=[  // [name as written in the file, curve it applies to]
+    ["NambePuebloNet","NambePuebloNet"],["Indios","IndiosAdj"],
+    ["Nueva","Nueva"],["Llano","Llano"],["Comunidad","Comunidad"],["Ortiz","Ortiz"],
+    ["Gardunos","Gardunos"],["Jose G. Ortiz","Jose G. Ortiz"],["Cano","Cano"],
+    ["Rincon","Rincon"],["Las Joyas","Las Joyas"],["Trujillos","Trujillos"],
+    ["Barranco Alto","Barranco Alto"],["Larga","Larga"],["Ancon de Jacona","Ancon de Jacona"],
+    ["Barranco","Barranco"],["Otra Vanda","Otra Vanda"],["Rancho","Rancho"],
+    ["San Ildefonso","San Ildefonso"]
   ];
-  var ALLOWABLES={}; AAMODT.forEach(function(r){ ALLOWABLES[ r[0]==="Indios"?"IndiosAdj":r[0] ]=r[1]; });
-  function pctEligible(nm){ return nm!=="ConsolNet" && ALLOWABLES[nm]!=null; }
+  function acreNorm(s){ return s.toLowerCase().replace(/[^a-z0-9]/g,""); }
+  var ACRE_KEYMAP={}; ACRE_TARGETS.forEach(function(p){ ACRE_KEYMAP[acreNorm(p[0])]=p[1]; });
+  ACRE_KEYMAP["jgortiz"]="Jose G. Ortiz";   // abbreviation alias (normalization alone won't catch "JG")
+  var ACRES={};           // curve name -> irrigable acres (for the loaded year)
+  var ACRES_COMMENTS=[];  // human-readable header lines from the file, for the popup
+  function acEligible(nm){ return nm!=="ConsolNet" && ACRES[nm]!=null && ACRES[nm]>0; }
+  function acresLoaded(){ for(var k in ACRES) return true; return false; }
+
 
   // ---- ADJUST DATA: derived series, computed in-browser; the CSV is untouched.
   var ADJ_UP="Upper Consolidated", ADJ_LO="Lower Consolidated", ADJ_IN="Indios",
@@ -496,7 +507,7 @@
     svg.setAttribute("viewBox","0 0 "+W+" "+H);
 
     var vis=data.names.filter(function(n){return state.visible.has(n);});
-    if(state.measure==="pct") vis=vis.filter(pctEligible);   // hide ConsolNet (and any non-allowable) in % mode
+    if(state.measure==="afac") vis=vis.filter(acEligible);   // hide ConsolNet and any curve without acres
     if(!vis.length){ svg.innerHTML=""; note.textContent="No visible gauges — use “Show all” or pick gauges at left."; note.style.display="block"; geom=null; renderStatus(); return; }
 
     var R=getResampled();
@@ -514,9 +525,9 @@
     vis.forEach(function(nm){
       var cfs=idx.map(function(i){return R.cols[nm][i];});
       var disp;
-      if(state.measure==="pct"){
-        var af=toAF(tWin,cfs), allow=ALLOWABLES[nm];
-        disp=(allow&&allow>0)?af.map(function(v){return v==null?null:v/allow*100;}):af.map(function(){return null;});
+      if(state.measure==="afac"){
+        var af=toAF(tWin,cfs), acres=ACRES[nm];
+        disp=(acres&&acres>0)?af.map(function(v){return v==null?null:v/acres;}):af.map(function(){return null;});
       } else if(state.measure==="af"){ disp=toAF(tWin,cfs); }
       else { disp=cfs; }
       for(var k=0;k<disp.length;k++){ var y=disp[k]; if(y!=null&&isFinite(y)){ if(state.scale==="log"&&y<=0)continue; if(y<ymin)ymin=y; if(y>ymax)ymax=y; } }
@@ -688,7 +699,7 @@
   }
 
   function yTitle(){
-    if(state.measure==="pct") return "cumulative volume / Aamodt 1978 annual volume (%), since "+(state.winStart?fmtDateShort(state.winStart):"start");
+    if(state.measure==="afac") return "cumulative acre feet per irrigable acre since "+(state.winStart?fmtDateShort(state.winStart):"start");
     if(state.measure==="af") return "cumulative volume — AF since "+(state.winStart?fmtDateShort(state.winStart):"start");
     return "discharge (cfs)";
   }
@@ -697,7 +708,7 @@
     function k(a,b){return '<span><span class="seg-k">'+a+'</span> <b>'+b+'</b></span>';}
     var nvis=data.names.filter(function(n){return state.visible.has(n);}).length;
     var win=(state.winStart&&state.winEnd)?(fmtDateShort(state.winStart)+"→"+fmtDateShort(state.winEnd)):"all";
-    var mlabel={cfs:"discharge (cfs)",af:"total (AF)",pct:"total (% of Aamodt)"}[state.measure];
+    var mlabel={cfs:"discharge (cfs)",af:"total (AF)",afac:"AF per irrigable acre"}[state.measure];
     var bits=[k("measure",mlabel)];
     bits.push(k("window",win)); bits.push(k("gauges",nvis+"/"+data.names.length));
     el.innerHTML=bits.join("");
@@ -725,7 +736,7 @@
         rows.push({name:sr.name,col:sr.col,val:y,cfs:sr.cfs[i],emph:sr.emph}); });
       pts.innerHTML=ptsHTML;
       rows.sort(function(a,b){ if(a.emph!==b.emph)return a.emph?-1:1; return (b.val==null?-Infinity:b.val)-(a.val==null?-Infinity:a.val); });
-      var unit=state.measure==="pct"?" %":state.measure==="af"?" AF":" cfs";
+      var unit=state.measure==="afac"?" AF/ac":state.measure==="af"?" AF":" cfs";
       var html='<div class="tt-x">'+fmtFull(geom.tWin[i])+'</div>';
       rows.forEach(function(r){ var cls=geom.hasEmph?(r.emph?"":"dim"):"";
         html+='<div class="tt-row '+cls+'"><div class="tt-left"><span class="swatch" style="background:'+r.col+'"></span><span class="tt-name">'+r.name+'</span></div><span class="tt-val">'+fmt(r.val)+unit+'</span></div>'; });
@@ -746,7 +757,7 @@
   function buildSeriesList(){
     var box=document.getElementById("seriesList"); box.innerHTML="";
     data.names.forEach(function(nm){
-      if(state.measure==="pct" && !pctEligible(nm)) return;     // hide ConsolNet (etc.) in % mode
+      if(state.measure==="afac" && !acEligible(nm)) return;     // hide ConsolNet (etc.) in AF/acre mode
       var ci=data.names.indexOf(nm),col=PALETTE[ci%PALETTE.length];
       var item=document.createElement("div"); item.className="s-item"+(state.emph.has(nm)?" emph":"");
       var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=state.visible.has(nm);
@@ -769,19 +780,19 @@
 
   function setMeasurePressed(v){ document.querySelectorAll('#measureSeg button').forEach(function(b){
     b.setAttribute("aria-pressed", b.getAttribute("data-v")===v?"true":"false"); }); }
-  // The Total (%) button exists only when Adjust is on AND the window is All.
+  // TotalAF/acre exists only with Adjust on, a Season-or-All window, and an acres file.
   function updateMeasureAvailability(){
-    var avail = state.adjust && state.winAll;
-    var btn=document.querySelector('#measureSeg [data-v="pct"]');
+    var avail = state.adjust && (state.winAll || state.winSeason) && acresLoaded();
+    var btn=document.querySelector('#measureSeg [data-v="afac"]');
     if(btn) btn.style.display = avail ? "" : "none";
-    if(!avail && state.measure==="pct"){ state.measure="af"; setMeasurePressed("af"); applyMeasureUI(); }
+    if(!avail && state.measure==="afac"){ state.measure="af"; setMeasurePressed("af"); applyMeasureUI(); }
   }
 
   function applyMeasureUI(){
     document.getElementById("measureHint").textContent =
-        state.measure==="pct" ? "Cumulative volume as a percent of each acequia's Aamodt 1978 annual allowable (hover the button for the table)."
-      : state.measure==="af"  ? "Cumulative acre-feet past each gauge since the window start (∫ cfs·dt ÷ 43,560)."
-      :                         "Instantaneous flow rate at each gauge.";
+        state.measure==="afac" ? "Cumulative acre-feet delivered per irrigable acre since the window start (hover the button for the acres used)."
+      : state.measure==="af"   ? "Cumulative acre-feet past each gauge since the window start (∫ cfs·dt ÷ 43,560)."
+      :                          "Instantaneous flow rate at each gauge.";
     state.ymax=null; var ym=document.getElementById("ymaxVal"); if(ym)ym.value="";
     state.ymin=null; var yn=document.getElementById("yminVal"); if(yn)yn.value="";
     buildSeriesList();
@@ -797,7 +808,9 @@
     var inp=document.getElementById("startDt"), inp2=document.getElementById("endDt");
     inp.min=inp2.min=toInput(ex.min); inp.max=inp2.max=toInput(ex.max);
     if(state.winStart==null){
-      setWindow(ex.min,ex.max);                 // first load: show All
+      var sw=seasonWindow();                     // first load: default to the irrigation season
+      if(sw){ setWindow(sw.start,sw.end); state.winAll=false; state.winSeason=true; }
+      else  { setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; }   // year not listed -> full extent
     } else {
       var s=state.winStart; if(s<ex.min||s>ex.max) s=ex.min;
       setWindow(s, ex.max);                      // keep the user's start; extend end to the latest data
@@ -878,6 +891,64 @@
       .catch(function(){ cyclesManifest=[]; rebuildCycleButtons(); });
   }
   function dataYear(){ return state.year || new Date().getFullYear(); }
+
+  // ----- irrigation-season default window (data/season_start_and_end_dates.csv).
+  // Clips the default axis to the official season; the CSVs are untouched, and
+  // "All" still reveals the full record (dam data from Jan 1).
+  var seasonMap={};
+  function parseSeasons(text){
+    var m={};
+    text.split(/\r?\n/).forEach(function(line){
+      var p=line.split(","); if(p.length<3) return;
+      var y=parseInt(p[0],10); if(!y) return;      // NaN on the header row -> skipped
+      m[y]={start:p[1].trim(), end:p[2].trim()};
+    });
+    return m;
+  }
+  function loadSeasonDates(cb){
+    fetch("data/season_start_and_end_dates.csv",{cache:"no-store"}).then(function(r){ if(!r.ok)throw 0; return r.text(); })
+      .then(function(txt){ seasonMap=parseSeasons(txt); })
+      .catch(function(){ seasonMap={}; })
+      .finally(function(){ if(cb)cb(); });
+  }
+  function seasonWindow(){                          // {start,end} for the loaded year, or null
+    var s=seasonMap[dataYear()]; if(!s) return null;
+    var start=new Date(s.start.replace(" ","T")), end=new Date(s.end.replace(" ","T"));
+    if(isNaN(start)||isNaN(end)) return null;
+    var now=new Date(); if(end>now) end=now;        // current season: end the axis at "now"
+    return {start:start, end:end};
+  }
+
+  // ----- per-year irrigable acres (data/<year>irrigableAcres.csv)
+  function parseAcres(text){
+    var acres={}, comments=[];
+    text.split(/\r?\n/).forEach(function(line){
+      var raw=line.replace(/\r$/,""); if(!raw.trim()) return;
+      var p=raw.split(",");
+      if(p.length>=2 && p[1].trim()!=="" && isFinite(Number(p[1]))){
+        var key=ACRE_KEYMAP[acreNorm(p[0])];
+        if(key) acres[key]=Number(p[1]);            // unmapped name,number rows are ignored
+      } else {
+        comments.push(raw.trim());                  // human-readable provenance line
+      }
+    });
+    return {acres:acres, comments:comments};
+  }
+  function loadAcres(){
+    ACRES={}; ACRES_COMMENTS=[];
+    fetch("data/"+dataYear()+"irrigableAcres.csv",{cache:"no-store"}).then(function(r){ if(!r.ok)throw 0; return r.text(); })
+      .then(function(txt){ var a=parseAcres(txt); ACRES=a.acres; ACRES_COMMENTS=a.comments; })
+      .catch(function(){ ACRES={}; ACRES_COMMENTS=[]; })
+      .finally(function(){ updateAcresInfo(); if(data){ updateMeasureAvailability(); render(); } });
+  }
+  function updateAcresInfo(){
+    var btn=document.querySelector('#measureSeg [data-v="afac"]'); if(!btn) return;
+    var lines=[];
+    if(ACRES_COMMENTS.length){ lines=lines.concat(ACRES_COMMENTS); lines.push(""); }
+  //  lines.push("Irrigable acres (denominators):");
+    ACRE_TARGETS.forEach(function(p){ if(ACRES[p[1]]!=null) lines.push(p[1]+"  "+ACRES[p[1]]); });
+    btn.setAttribute("data-info", lines.join("\n"));
+  }
   function parseSchedule(text){
     var out=[];
     text.split(/\r?\n/).forEach(function(line,ln){
@@ -945,7 +1016,7 @@
         state.activeCycle=c.file;
         var st=new Date(c.start.replace(" ","T")), en=new Date(c.end.replace(" ","T")), now=new Date();
         if(en>now) en=now;                       // ongoing cycle: end the axis at "now"
-        setWindow(st,en); state.winAll=false;
+        setWindow(st,en); state.winAll=false; state.winSeason=false;
         updateMeasureAvailability();
         rebuildCycleButtons(); render();
       })
@@ -974,7 +1045,7 @@
         if(mode==="current"){
           row.style.display="none";
           if(state.year===null) return;        // already on the live year
-          state.year=null; clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons();
+          state.year=null; clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons(); loadAcres();
         } else {
           row.style.display="";
           if(state.year!==null) return;         // already showing a prior year
@@ -987,11 +1058,11 @@
               return;
             }
             years.forEach(function(y){ var o=document.createElement("option"); o.value=y; o.textContent=y; sel.appendChild(o); });
-            sel.value=years[0]; state.year=years[0]; clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons();
+            sel.value=years[0]; state.year=years[0]; clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons(); loadAcres();
           });
         }
       }); });
-      sel.addEventListener("change",function(e){ state.year=Number(e.target.value); clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons(); });
+      sel.addEventListener("change",function(e){ state.year=Number(e.target.value); clearSchedule(); reloadFromFile(true,true); rebuildCycleButtons(); loadAcres(); });
     })();
 
     var ymv=document.getElementById("ymaxVal");
@@ -1006,11 +1077,14 @@
 
     document.getElementById("presets").querySelectorAll("button").forEach(function(b){
       b.addEventListener("click",function(){ var w=b.getAttribute("data-w"), ex=dataExtent();
-        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; clearSchedule(); rebuildCycleButtons(); }
-        else { var days=Number(w); var start=new Date(ex.max.getTime()-days*864e5); if(start<ex.min)start=ex.min; setWindow(start,ex.max); state.winAll=false; }
+        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; clearSchedule(); rebuildCycleButtons(); }
+        else if(w==="season"){ var sw=seasonWindow();
+          if(sw){ setWindow(sw.start,sw.end); state.winAll=false; state.winSeason=true; }
+          else { setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; } }   // year not listed -> full extent
+        else { var days=Number(w); var start=new Date(ex.max.getTime()-days*864e5); if(start<ex.min)start=ex.min; setWindow(start,ex.max); state.winAll=false; state.winSeason=false; }
         updateMeasureAvailability(); render(); }); });
-    document.getElementById("startDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winStart=d;state.winAll=false;updateMeasureAvailability();render();} });
-    document.getElementById("endDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winEnd=d;state.winAll=false;updateMeasureAvailability();render();} });
+    document.getElementById("startDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winStart=d;state.winAll=false;state.winSeason=false;updateMeasureAvailability();render();} });
+    document.getElementById("endDt").addEventListener("change",function(e){ var d=new Date(e.target.value); if(!isNaN(d)){state.winEnd=d;state.winAll=false;state.winSeason=false;updateMeasureAvailability();render();} });
 
     document.getElementById("showAll").addEventListener("click",function(){state.visible=new Set(data.names);buildSeriesList();render();});
     document.getElementById("showNone").addEventListener("click",function(){state.visible=new Set();buildSeriesList();render();});
@@ -1028,15 +1102,6 @@
     document.querySelectorAll('label.filebtn').forEach(function(l){ l.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();l.click();} }); });
 
     setupHover();
-
-    // fill the Total (%) button's hover table from the Aamodt allowables
-    (function(){
-      var btn=document.querySelector('#measureSeg [data-v="pct"]');
-      if(!btn) return;
-      var body=AAMODT.map(function(r){ var n=r[0], gap=18-n.length; if(gap<2)gap=2;
-        return n + new Array(gap+1).join("\u00A0") + r[1]; }).join("\n");
-      btn.setAttribute("data-info","Aamodt 1978 allowables (AF/yr)\n(Pueblo values are for 1st-priority acres)\n"+body);
-    })();
 
     // hover/focus info bubbles for any element with data-info
     (function(){
@@ -1065,7 +1130,8 @@
     document.addEventListener("visibilitychange",function(){ if(!document.hidden) checkForUpdate(); });
 
     loadSchedulesManifest();
-    tryAutoLoad(); // works under a local server / GitHub Pages; no-ops on file://
+    loadAcres();
+    loadSeasonDates(tryAutoLoad); // fetch season window first, then load data (no-ops on file://)
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init); else init();
 })();
