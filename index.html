@@ -226,7 +226,7 @@
       </div>
       <footer>
         <span id="footnote">Hover the plot to read exact values. Total (AF) integrates discharge from the window start — change the start date to re-zero the accrual.</span>
-        <span><code>Based on OSE provisional data. Website features planning by Greg Swift. Programming by Anthropic Claude Opus 4.8.</code></span>
+        <span><code>Based on OSE provisional data. Capability design by Greg Swift. Programming by Anthropic Claude Opus 4.8.</code></span>
       </footer>
     </main>
 
@@ -945,7 +945,6 @@
     var btn=document.querySelector('#measureSeg [data-v="afac"]'); if(!btn) return;
     var lines=[];
     if(ACRES_COMMENTS.length){ lines=lines.concat(ACRES_COMMENTS); lines.push(""); }
-  //  lines.push("Irrigable acres (denominators):");
     ACRE_TARGETS.forEach(function(p){ if(ACRES[p[1]]!=null) lines.push(p[1]+"  "+ACRES[p[1]]); });
     btn.setAttribute("data-info", lines.join("\n"));
   }
@@ -1077,7 +1076,8 @@
 
     document.getElementById("presets").querySelectorAll("button").forEach(function(b){
       b.addEventListener("click",function(){ var w=b.getAttribute("data-w"), ex=dataExtent();
-        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; clearSchedule(); rebuildCycleButtons(); }
+        clearSchedule(); rebuildCycleButtons();   // any window preset turns off an active cycle
+        if(w==="all"){ setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; }
         else if(w==="season"){ var sw=seasonWindow();
           if(sw){ setWindow(sw.start,sw.end); state.winAll=false; state.winSeason=true; }
           else { setWindow(ex.min,ex.max); state.winAll=true; state.winSeason=false; } }   // year not listed -> full extent
